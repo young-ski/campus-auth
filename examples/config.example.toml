@@ -1,14 +1,20 @@
 # 复制成 campus-auth.toml 再改。campus-auth.toml 已在 .gitignore 里。
-adapter = "huuc"        # huuc / generic / 自己的模块:属性
+# adapter 用 probe 判出来的那个：
+#   huuc    Dr.COM 系（本仓库示例，改名复用）
+#   ruijie  锐捷 ePortal —— 必须配 base_url
+#   srun    深澜 Srun —— 必须配 base_url 指到登录页
+adapter = "huuc"
 account = "081423456"   # 学号，纯数字，别带 @ 后缀
 password = ""           # 留空则读 $CAMPUS_AUTH_PASSWORD
-operator = "none"       # none / cmcc / unicom / dx
+operator = "none"       # none / cmcc / unicom / dx，仅 Dr.COM 系有意义
 
+# base_url = "http://10.20.30.1/eportal/index.jsp?wlanuserip=10.1.2.3"  # 锐捷示例
+# base_url = "http://10.20.30.1/"                                      # 深澜示例
+# check_url = ""        # 锐捷判定在线用的 204 地址，默认 connect.rom.miui.com
 # verify_tls = false    # 校园门户都是自签证书，默认就关着
 # timeout = 20
 # retries = 2
 # mac = ""              # 留空自动探测，取不到会填全 0
 # ip = ""               # 离线生成 URL 时可手动指定
-# base_url = ""         # 留空用适配层里的地址
 # interval = 120        # watch 两轮之间的基准秒数
 # probe_host = "www.baidu.com"

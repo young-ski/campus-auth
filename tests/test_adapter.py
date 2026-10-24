@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from campus_auth.adapters import get_adapter, names
@@ -56,10 +58,14 @@ def test_generic_encoder_is_identity() -> None:
     assert get_adapter("generic").encoder(IP)("abc") == "abc"
 
 
+def fake_portal(**over):
+    base = dict(ip=IP, mac="0" * 12, account="081425412", password="pw", operator="cmcc", ctx={})
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
 def test_login_params_shape() -> None:
-    params = HUUC.login_params(
-        ip=IP, mac="0" * 12, account="081425412", password="pw", operator="cmcc"
-    )
+    params = HUUC.login_request(fake_portal()).params
     keys = [p.key for p in params]
 
     assert keys[:4] == ["callback", "login_method", "user_account", "user_password"]
@@ -72,8 +78,12 @@ def test_login_params_shape() -> None:
 
 
 def test_login_params_js_version_present() -> None:
-    params = HUUC.login_params(ip=IP, mac="0" * 12, account="1", password="p", operator="none")
+    params = HUUC.login_request(fake_portal(operator="none")).params
     assert ("jsVersion", "4.2.1") in [(p.key, p.value) for p in params]
+
+
+def test_login_request_is_get() -> None:
+    assert HUUC.login_request(fake_portal()).method == "GET"
 
 
 def test_noncelooked_different() -> None:
@@ -81,11 +91,12 @@ def test_noncelooked_different() -> None:
 
 
 def test_logout_and_unbind_shape() -> None:
-    logout = dict((p.key, p.value) for p in HUUC.logout_params(ip=IP, mac="A" * 12))
+    portal = fake_portal(account="1")
+    logout = {p.key: p.value for p in HUUC.logout_request(portal).params}
     assert logout["user_account"] == "drcom"
     assert logout["ac_logout"] == "1"
 
-    unbind = dict((p.key, p.value) for p in HUUC.unbind_params(ip=IP, mac="A" * 12, account="1"))
+    unbind = {p.key: p.value for p in HUUC.unbind_request(portal).params}
     assert unbind["user_account"] == "1"
 
 

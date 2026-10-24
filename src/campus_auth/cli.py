@@ -128,12 +128,18 @@ def cmd_probe(args: argparse.Namespace) -> int:
     for note in analysis.notes:
         _say(f"! {note}")
     _say("")
-    if analysis.is_drcom:
-        _say("可以用 huuc 当模板起适配层，主要改 base_url、路径和密钥函数。")
-        if analysis.missing:
-            _say("还缺证据: " + "、".join(analysis.missing[:3]))
-    else:
-        _say("不通用本仓库的适配层；确认方向再动手，别直接抄 huuc。")
+    target_hint = f" --url {used}" if analysis.verdict in {"ruijie", "srun"} else ""
+    howto = f"跑不通就照样式改 adapter；先试 `campus-auth login --adapter {{}}{target_hint}`"
+    advice = {
+        "drcom": "用内置 huuc 当模板起适配层，主要改 base_url、路径和密钥函数。",
+        "likely-drcom": "像 Dr.COM 但证据不够，先 F12 抓一次真登录请求再动手。",
+        "ruijie": howto.format("ruijie"),
+        "srun": howto.format("srun"),
+        "unknown": "内置的 huuc / ruijie / srun 都对不上，先确认门户类型。",
+    }[analysis.verdict]
+    _say(advice)
+    if analysis.missing and analysis.is_drcom:
+        _say("还缺证据: " + "、".join(analysis.missing[:3]))
     return EXIT_OK if analysis.is_drcom else EXIT_REJECTED
 
 
@@ -145,7 +151,7 @@ def _adapter_base_url(args: argparse.Namespace) -> str:
 def cmd_adapters(_: argparse.Namespace) -> int:
     for name in adapters.names():
         adapter = adapters.get_adapter(name)
-        _say(f"{name:10} {adapter.school}  <{adapter.base_url}>")
+        _say(f"{name:10} {adapter.school}  [{adapter.status}]  <{adapter.base_url}>")
         if adapter.notes:
             _say(f"{'':10} {adapter.notes}")
     return EXIT_OK
@@ -155,7 +161,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     config = _config(args)
     ctx = build(config, need_password=False)
     require_campus(ctx)
-    sessions = ctx.portal.online()
+    sessions = ctx.portal.sessions()
     if args.json:
         _dump({"online": bool(sessions), "ip": ctx.ip, "sessions": [s.raw for s in sessions]})
         return EXIT_OK if sessions else EXIT_REJECTED
@@ -195,7 +201,7 @@ def cmd_login(args: argparse.Namespace) -> int:
         _say("已经在线，无需重复登录")
         return EXIT_OK
 
-    result = ctx.portal.login(config.account, config.password, config.operator)
+    result = ctx.portal.login()
     _say(f"服务端: {result.msg or '(无消息)'}  ret_code={result.ret_code}")
     if result.hint:
         _say(f"! {result.hint}")
@@ -225,66 +231,80 @@ def cmd_login(args: argparse.Namespace) -> int:
     return EXIT_OK if online else EXIT_REJECTED
 
 
+def _payload_ok(payload: dict) -> bool:
+    """注销/解绑的成败判定：三家门户用的字段各不相同。"""
+    if payload.get("result") in (1, "1", True, "success", "ok"):
+        return True
+    return str(payload.get("error") or "").lower() == "ok"
+
+
 def cmd_logout(args: argparse.Namespace) -> int:
     config = _config(args)
-    ctx = _prepare(args, config)
+    ctx = build(config, need_password=adapters.get_adapter(config.adapter).logout_needs_password)
+    require_campus(ctx)
     payload = ctx.portal.logout()
-    _say(f"服务端: {payload.get('msg') or '(无消息)'}")
-    ok = bool(payload.get("result"))
+    msg = (
+        payload.get("msg")
+        or payload.get("message")
+        or payload.get("suc_msg")
+        or payload.get("error")
+    )
+    _say(f"服务端: {msg or '(无消息)'}")
+    ok = _payload_ok(payload)
     if args.json:
-        _dump({"ok": ok, "msg": payload.get("msg")})
+        _dump({"ok": ok, "msg": msg})
     return EXIT_OK if ok else EXIT_REJECTED
 
 
 def cmd_unbind(args: argparse.Namespace) -> int:
     config = _config(args)
-    ctx = _prepare(args, config)
-    payload = ctx.portal.unbind(config.account)
-    _say(f"服务端: {payload.get('msg') or '(无消息)'}  MAC {ctx.mac}")
-    ok = bool(payload.get("result"))
+    ctx = build(config, need_password=False)  # 解绑只用学号和 MAC
+    require_campus(ctx)
+    payload = ctx.portal.unbind()
+    message = payload.get("msg") or payload.get("message") or payload.get("error")
+    _say(f"服务端: {message or '(无消息)'}  MAC {ctx.mac}")
+    ok = _payload_ok(payload)
     if args.json:
-        _dump({"ok": ok, "msg": payload.get("msg")})
+        _dump({"ok": ok, "msg": message})
     return EXIT_OK if ok else EXIT_REJECTED
 
 
 def cmd_urls(args: argparse.Namespace) -> int:
     config = _config(args)
-    ctx = build(config)  # 不探活：配合 --ip 可以完全离线生成
+    ctx = build(config, need_password=False)  # 不探活：配合 --ip 可以完全离线生成
+    if not config.password:
+        _say("! 没给密码，登录快捷方式里的密码字段会是空的")
     if not config.ip and not net.resolves(_host_port(ctx.portal.base_url)[0]):
         _say("! 门户域名解析不了，生成的 URL 要等你回到校园网才有效")
 
-    targets: list[tuple[str, str, list]] = []
-    for operator in ["none", *ctx.adapter.operator_suffixes]:
-        suffix = "" if operator == "none" else f"({operator})"
-        targets.append(
-            (
-                f"登录{suffix}",
-                ctx.adapter.login_path,
-                ctx.adapter.login_params(
-                    ip=ctx.ip,
-                    mac=ctx.mac,
-                    account=config.account,
-                    password=config.password,
-                    operator=operator,
-                ),
-            )
-        )
-    # 注销和解绑与运营商无关，各来一份就够
-    targets.append(
-        ("注销", ctx.adapter.logout_path, ctx.adapter.logout_params(ip=ctx.ip, mac=ctx.mac))
-    )
-    targets.append(
-        (
-            "解绑",
-            ctx.adapter.unbind_path,
-            ctx.adapter.unbind_params(ip=ctx.ip, mac=ctx.mac, account=config.account),
-        )
-    )
+    # 锐捷/深澜要先发现门户地址和 challenge，离线时可能拿不到
+    discovered = True
+    try:
+        ctx.portal.prepare()
+    except (CampusAuthError, ValueError) as exc:
+        discovered = False
+        _say(f"! 发现步骤没跑通（{exc}），只生成门户首页链接")
+
+    targets: list[tuple[str, object]] = []
+    if discovered:
+        for operator in ["none", *ctx.adapter.operator_suffixes]:
+            suffix = "" if operator == "none" else f"({operator})"
+            ctx.portal.operator = operator
+            targets.append((f"登录{suffix}", ctx.adapter.login_request(ctx.portal)))
+        ctx.portal.operator = config.operator
+        # 注销和解绑与运营商无关，各来一份就够
+        targets.append(("注销", ctx.adapter.logout_request(ctx.portal)))
+        targets.append(("解绑", ctx.adapter.unbind_request(ctx.portal)))
+    else:
+        targets.append(("门户首页", None))
 
     outdir = Path(args.output or "urls")
     outdir.mkdir(parents=True, exist_ok=True)
-    for name, path, params in targets:
-        url = ctx.portal.build_url(path, params)
+    post = False
+    for name, request in targets:
+        url = ctx.portal.base_url if request is None else ctx.portal.build_url(request)
+        if request is not None and request.method.upper() != "GET":
+            post = True
         (outdir / f"{name}.url").write_text(
             f"[InternetShortcut]\nURL={url}\n", encoding="ascii", newline="\n"
         )
@@ -292,8 +312,13 @@ def cmd_urls(args: argparse.Namespace) -> int:
             (outdir / f"{name}.desktop").write_text(
                 f"[Desktop Entry]\nType=Link\nName={name}\nURL={url}\n", encoding="utf-8"
             )
-    _say(f"写入 {outdir}/: {', '.join(name for name, _, _ in targets)}")
-    _say("注意：URL 里绑着当前 IP 派生的密钥，换网段就得重生成。")
+    _say(f"写入 {outdir}/: {', '.join(name for name, _ in targets)}")
+    if post:
+        _say(
+            "! 该适配层用 POST 提交，快捷方式只带地址、没有表单体，"
+            "点开会是错误页 —— 用 login 命令。"
+        )
+    _say("注意：URL 里绑着当前 IP 和一次性 challenge，换网段或过期就得重生成。")
     return EXIT_OK
 
 
@@ -347,6 +372,7 @@ def _config(args: argparse.Namespace) -> Config:
         "base_url": args.url,
         "timeout": args.timeout,
         "retries": args.retries,
+        "check_url": args.check_url,
     }
     if args.password_stdin:
         overrides["password"] = sys.stdin.readline().rstrip("\r\n")
@@ -383,6 +409,7 @@ def _parser() -> argparse.ArgumentParser:
     common.add_argument("--timeout", type=float, help="单次请求超时秒数")
     common.add_argument("--retries", type=int, help="传输重试次数")
     common.add_argument("--verify-tls", action="store_true", help="校验证书")
+    common.add_argument("--check-url", help="在线判定用的 204 地址（默认 connect.rom.miui.com）")
     common.add_argument("--json", action="store_true", help="输出 JSON")
 
     sub = parser.add_subparsers(dest="command", required=True)

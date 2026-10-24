@@ -31,17 +31,17 @@ def fake_portal(monkeypatch: pytest.MonkeyPatch, *, online_after_login: bool = T
     """把 Portal.get 换成有状态的假实现。"""
     state = {"online": False, "logins": 0, "calls": []}
 
-    def fake_get(self: Portal, path: str, params):
-        state["calls"].append(path)
-        if path.endswith("online_list"):
+    def fake_request(self: Portal, request):
+        state["calls"].append(request.path)
+        if request.path.endswith("online_list"):
             return {"list": [{"online_ip": IP, "user_account": "0814"}] if state["online"] else []}
-        if path.endswith("login"):
+        if request.path.endswith("login"):
             state["logins"] += 1
             state["online"] = online_after_login
             return {"result": 1, "ret_code": 0, "msg": "认证成功"}
         return {"result": 1, "msg": "ok"}
 
-    monkeypatch.setattr(Portal, "get", fake_get)
+    monkeypatch.setattr(Portal, "request", fake_request)
     return state
 
 
@@ -133,12 +133,12 @@ def test_login_already_online_skips(campus: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_login_rejected(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    def fake_get(self, path, params):
-        if path.endswith("online_list"):
+    def fake_request(self, request):
+        if request.path.endswith("online_list"):
             return {"list": []}
         return {"result": 1, "ret_code": 1, "msg": "unbind isp uid"}
 
-    monkeypatch.setattr(Portal, "get", fake_get)
+    monkeypatch.setattr(Portal, "request", fake_request)
     monkeypatch.setattr("time.sleep", lambda _: None)
     assert run(["login", "-a", "1", "-p", "p"]) == 1
     out = capsys.readouterr().out

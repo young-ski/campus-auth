@@ -67,6 +67,10 @@ def build(config: Config, *, need_password: bool = True) -> Context:
         retries=config.retries,
         ip=ip,
         mac=mac or "0" * 12,
+        account=config.account,
+        password=config.password,
+        operator=config.operator,
+        check_url=config.check_url,
     )
     return Context(
         config=config,

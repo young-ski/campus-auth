@@ -27,8 +27,13 @@ class Cycle:
 
 
 def one_cycle(
-    portal: Portal, account: str, password: str, operator: str, probe_host: str = "www.baidu.com"
+    portal: Portal,
+    account: str = "",
+    password: str = "",
+    operator: str = "",
+    probe_host: str = "www.baidu.com",
 ) -> Cycle:
+    """一轮检查 + 必要时的重登。account 等参数仅为兼容旧调用，实际从 portal 取。"""
     try:
         if portal.mine():
             return Cycle(online=True, attempted=False, ok=True, message="仍在线")
@@ -38,7 +43,7 @@ def one_cycle(
     if net.resolves(probe_host):
         return Cycle(online=False, attempted=False, ok=True, message="DNS 正常，无需登录")
 
-    result = portal.login(account, password, operator)
+    result = portal.login()
     if result.ok:
         try:
             if portal.mine():

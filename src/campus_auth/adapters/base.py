@@ -3,11 +3,13 @@
 一个适配层只描述"某所学校门户的差异"，不实现 HTTP、重试、CLI。
 差异面被压缩成四件事：
 
-1. `base_url` 与各接口路径
-2. 密钥怎么来、参数怎么编码（`key_style` + `encoder`）
+1. 请求怎么发：路径、方法、查询串、表单体（`Request`）
+2. 参数怎么编码（`key_style` + `encoder`）
 3. 账号怎么拼（前缀、运营商后缀）
-4. 响应怎么解读（`interpret_login`）、在线列表怎么认人
+4. 响应怎么解读（`interpret_login` / `interpret_sessions`）
 
+默认行为（GET + JSONP + `list` 数组 + `result`/`ret_code`）覆盖 Dr.COM 系；
+锐捷、深澜只覆盖需要变的那几个方法，不重写 core。
 新增一所学校 = 抄一份 `example_generic.py` 改常量，别动 core。
 """
 
@@ -19,7 +21,7 @@ from dataclasses import dataclass, field
 
 from ..crypto import xor_hex, xor_key
 
-__all__ = ["Adapter", "Param", "LoginResult"]
+__all__ = ["Adapter", "LoginResult", "Param", "Request"]
 
 
 class Param(tuple):
@@ -31,6 +33,21 @@ class Param(tuple):
     key = property(lambda self: self[0])
     value = property(lambda self: self[1])
     encode = property(lambda self: self[2])
+
+
+@dataclass(frozen=True)
+class Request:
+    """一次门户请求。`path` 可相对 `base_url`，也可给完整 URL（跨主机发现时用）。"""
+
+    path: str
+    method: str = "GET"
+    params: list[Param] = field(default_factory=list)
+    body: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def is_absolute(self) -> bool:
+        return self.path.startswith(("http://", "https://"))
 
 
 @dataclass(frozen=True)
@@ -51,7 +68,6 @@ class Adapter:
     base_url: str
     key_style: str = "ip-xor"
     account_prefix: str = ""
-    account_delimiter: str = ","
     operator_suffixes: Mapping[str, str] = field(default_factory=dict)
     js_version: str = ""
     login_path: str = "/eportal/portal/login"
@@ -61,7 +77,9 @@ class Adapter:
     callback_prefix: str = "dr"
     timeout: float = 20.0
     verify_tls: bool = False
+    status: str = "已验证"
     notes: str = ""
+    logout_needs_password: bool = False
 
     # ---------- 编码 ----------
 
@@ -72,7 +90,7 @@ class Adapter:
         if self.key_style == "ip-xor":
             key = xor_key(ip)
             return lambda text: xor_hex(text, key)
-        raise ValueError(f"未知 key_style: {self.key_style}")
+        raise ValueError(f"未知 key_style: {self.key_style!r}")
 
     # ---------- 账号 ----------
 
@@ -94,7 +112,7 @@ class Adapter:
             Param("user_password", password),
         ]
 
-    def identity_params(self, ip: str, mac: str, cb: str) -> list[Param]:
+    def identity_params(self, ip: str, mac: str) -> list[Param]:
         """每个请求都带的身份参数；`wlan_ac_ip` 等手段留空。"""
         params = [
             Param("wlan_user_ip", ip),
@@ -119,34 +137,53 @@ class Adapter:
     def nonce() -> str:
         return f"0.{random.randint(10**15, 10**16 - 1)}"
 
-    def login_params(
-        self, *, ip: str, mac: str, account: str, password: str, operator: str
-    ) -> list[Param]:
+    # ---------- 发现（锐捷要门户地址，深澜要 challenge） ----------
+
+    def discover(self, portal: object, account: str) -> dict[str, object]:
+        """登录前的准备请求；默认什么都不做。结果放进 `portal.ctx`。"""
+        return {}
+
+    # ---------- 请求构造 ----------
+
+    def login_request(self, portal: object) -> Request:
+        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
         cb = self.callback("1003")
-        return [
-            Param("callback", cb),
-            Param("login_method", "1"),
-            *self.account_params(account, password, operator),
-            *self.identity_params(ip, mac, cb),
-        ]
+        return Request(
+            path=self.login_path,
+            params=[
+                Param("callback", cb),
+                Param("login_method", "1"),
+                *self.account_params(
+                    portal.account,  # type: ignore[attr-defined]
+                    portal.password,  # type: ignore[attr-defined]
+                    portal.operator,  # type: ignore[attr-defined]
+                ),
+                *self.identity_params(ip, mac),
+            ],
+        )
 
-    def logout_params(self, *, ip: str, mac: str) -> list[Param]:
+    def logout_request(self, portal: object) -> Request:
+        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
         cb = self.callback("1004")
-        return [
-            Param("callback", cb),
-            Param("login_method", "1"),
-            Param("user_account", "drcom"),
-            Param("user_password", "123"),
-            Param("ac_logout", "1"),
-            Param("register_mode", "1"),
-            Param("wlan_vlan_id", "0"),
-            *self.identity_params(ip, mac, cb),
-        ]
+        return Request(
+            path=self.logout_path,
+            params=[
+                Param("callback", cb),
+                Param("login_method", "1"),
+                Param("user_account", "drcom"),
+                Param("user_password", "123"),
+                Param("ac_logout", "1"),
+                Param("register_mode", "1"),
+                Param("wlan_vlan_id", "0"),
+                *self.identity_params(ip, mac),
+            ],
+        )
 
-    def unbind_params(self, *, ip: str, mac: str, account: str) -> list[Param]:
+    def unbind_request(self, portal: object) -> Request:
+        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
         params = [
             Param("callback", self.callback("1005")),
-            Param("user_account", account),
+            Param("user_account", portal.account),  # type: ignore[attr-defined]
             Param("wlan_user_mac", mac),
             Param("wlan_user_ip", ip),
         ]
@@ -158,7 +195,10 @@ class Adapter:
             Param("lang", "zh"),
             Param("lang", "zh", encode=False),
         ]
-        return params
+        return Request(path=self.unbind_path, params=params)
+
+    def sessions_request(self, portal: object) -> Request:
+        return Request(path=self.online_path, params=self.online_params())
 
     def online_params(self) -> list[Param]:
         return [Param("callback", "cb", encode=False), Param("lang", "zh", encode=False)]
@@ -180,8 +220,20 @@ class Adapter:
             return ""
         return f"服务端返回 ret_code={ret_code}，原文: {msg or '(空)'}"
 
+    def interpret_sessions(self, payload: Mapping[str, object]) -> list[Mapping[str, object]]:
+        """从会话接口的响应里取出会话行；默认认 `list` 数组。"""
+        rows = payload.get("list") or []
+        return [row for row in rows if isinstance(row, dict)]  # type: ignore[misc]
+
     def row_is_mine(self, row: Mapping[str, object], ip: str, mac: str) -> bool:
         return str(row.get("online_ip") or "") == ip
+
+    def online_check(self, portal: object) -> bool | None:
+        """在线判定。返回 None 表示"走会话列表"，返回 True/False 表示自己判定。"""
+        return None
+
+    def after_login(self, portal: object, payload: Mapping[str, object]) -> None:
+        """登录成功后收尾（比如存下 userIndex）；默认什么都不做。"""
 
     def zone_hint(self, ip: str, ssid: str | None) -> str:
         return ""

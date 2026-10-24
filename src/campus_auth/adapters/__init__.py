@@ -14,6 +14,8 @@ from .base import Adapter, LoginResult, Param
 
 BUILTIN: Final[dict[str, str]] = {
     "huuc": "campus_auth.adapters.huuc:ADAPTER",
+    "ruijie": "campus_auth.adapters.ruijie:ADAPTER",
+    "srun": "campus_auth.adapters.srun:ADAPTER",
     "generic": "campus_auth.adapters.example_generic:ADAPTER",
 }
 

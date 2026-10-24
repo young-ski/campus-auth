@@ -54,6 +54,7 @@ class Config:
     interval: float = 120.0
     jitter: float = 0.3
     probe_host: str = "www.baidu.com"
+    check_url: str = ""
 
     def fingerprint(self) -> str:
         return f"{self.adapter}/{self.account}/{self.operator}"

@@ -45,3 +45,11 @@ python tools/fake_portal.py --style ruijie --port 8765   # drcom / ruijie / srun
 campus-auth probe --url http://127.0.0.1:8765
 ```
 
+改 `ruijie` / `srun` 适配层时更要跑一遍 —— 假门户会**真的校验**深澜的 chksum
+和锐捷的表单，账号 `20240001`、密码 `pw`：
+
+```bash
+campus-auth login --adapter srun --url http://127.0.0.1:8765 --ip 10.1.2.3 -a 20240001 -p pw
+campus-auth logout --adapter srun --url http://127.0.0.1:8765 --ip 10.1.2.3 -a 20240001 -p pw
+```
+

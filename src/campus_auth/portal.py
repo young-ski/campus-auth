@@ -1,7 +1,7 @@
 """Portal 传输与业务动作。
 
-只做三件事：拼 URL、发请求、把响应翻译成 `LoginResult` / 会话列表。
-任何"某所学校特有的东西"都来自适配层，这里不含硬编码学校逻辑。
+只做四件事：拼 URL、发请求、跟着适配层说的方式发、把响应翻译成
+`LoginResult` / 会话列表。任何"某所学校特有的东西"都来自适配层。
 
 禁用证书校验是刻意为之：校园门户清一色自签证书，而且不少还停在
 TLS 1.0 + SHA1（所以要把 SECLEVEL 降到 0）。
@@ -10,6 +10,7 @@ TLS 1.0 + SHA1（所以要把 SECLEVEL 降到 0）。
 from __future__ import annotations
 
 import contextlib
+import http.cookiejar
 import json
 import random
 import ssl
@@ -18,11 +19,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
 
-from .adapters.base import Adapter, LoginResult, Param
-from .errors import RejectedError, TransportError
+from .adapters.base import Adapter, LoginResult, Request
+from .errors import TransportError
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth"
 
@@ -37,11 +37,11 @@ def _ssl_context(verify: bool) -> ssl.SSLContext:
     return ctx
 
 
-def extract_json(body: str) -> dict[str, Any]:
+def extract_json(body: str) -> dict[str, object]:
     """从 JSONP 响应里挖出对象。
 
-    `dr1003({...})` / `jsonp123({...})` / 纯 JSON 都要能吃下去，所以按括号
-    配平扫描，而不是正则 `\\{.*\\}`（后者会被字符串里的花括号带偏）。
+    `dr1003({...})` / `_({...})` / 纯 JSON 都要能吃下去，所以按括号配平扫描，
+    而不是正则 `\\{.*\\}`（后者会被字符串里的花括号带偏）。
     """
     start = body.find("{")
     while start != -1:
@@ -81,7 +81,7 @@ class Session:
     time_long: str = ""
     uplink: str = ""
     downlink: str = ""
-    raw: Mapping[str, Any] | None = None
+    raw: Mapping[str, object] = field(default_factory=dict)
 
 
 class Portal:
@@ -95,6 +95,10 @@ class Portal:
         retries: int = 2,
         ip: str = "",
         mac: str = "",
+        account: str = "",
+        password: str = "",
+        operator: str = "none",
+        check_url: str = "",
     ) -> None:
         adapter.check()
         self.adapter = adapter
@@ -104,28 +108,47 @@ class Portal:
         self.retries = max(0, retries)
         self.ip = ip
         self.mac = mac or "0" * 12
-        self._ctx = _ssl_context(self.verify_tls)
+        self.account = account
+        self.password = password
+        self.operator = operator
+        self.check_url = check_url
+        self.ctx: dict[str, object] = {}
         self.last_url = ""
+        self._ctx_tls = _ssl_context(self.verify_tls)
+        self._jar = http.cookiejar.CookieJar()
+        self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._jar))
 
     # ---------- 传输 ----------
 
-    def build_url(self, path: str, params: list[Param]) -> str:
-        """按适配层的编码规则拼出完整 URL（生成快捷方式也走这里）。"""
+    def build_url(self, request: Request) -> str:
+        """按适配层的编码规则拼出完整 URL。"""
         enc = self.adapter.encoder(self.ip)
-        pairs = [(p.key, enc(p.value) if p.encode else p.value) for p in params]
+        pairs = [(p.key, enc(p.value) if p.encode else p.value) for p in request.params]
         query = urllib.parse.urlencode(pairs, safe="@,.:")
-        return f"{self.base_url}{path}?{query}"
+        url = request.path if request.is_absolute else f"{self.base_url}{request.path}"
+        if not query:
+            return url
+        return f"{url}{'&' if '?' in url else '?'}{query}"
 
-    def get(self, path: str, params: list[Param]) -> dict[str, Any]:
-        url = self.build_url(path, params)
+    def _body(self, request: Request) -> bytes:
+        enc = self.adapter.encoder(self.ip)
+        pairs = [(p.key, enc(p.value) if p.encode else p.value) for p in request.params]
+        pairs += [(k, enc(v)) for k, v in request.body.items()]
+        return urllib.parse.urlencode(pairs, safe="@,.:").encode()
+
+    def request(self, request: Request) -> dict[str, object]:
+        url = self.build_url(request)
         self.last_url = url
+        data = self._body(request) if request.method.upper() == "POST" else None
+        headers = {"User-Agent": USER_AGENT, **request.headers}
+        if data is not None:
+            headers.setdefault("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(
-                    request, context=self._ctx, timeout=self.timeout
-                ) as resp:
+                req = urllib.request.Request(url, data=data, headers=headers)
+                with self._opener.open(req, timeout=self.timeout) as resp:
                     body = resp.read().decode("utf-8", "replace")
                 return extract_json(body)
             except urllib.error.HTTPError as exc:
@@ -151,51 +174,86 @@ class Portal:
                 ) from exc
         raise TransportError(f"请求失败（已重试 {self.retries} 次）: {self.last_url}\n{last}")
 
+    def get(self, path: str, params: list) -> dict[str, object]:
+        """兼容旧写法：GET 一个路径。"""
+        return self.request(Request(path=path, params=list(params)))
+
+    def raw(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        body: bytes | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> tuple[int, str]:
+        """发一次请求并原样返回 (状态码, 文本)，不解析 JSON。
+
+        给"探页面 / 看 204"这类动作留着，适配层的 discover 用得上。
+        """
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"User-Agent": USER_AGENT, **dict(headers or {})},
+            method=method,
+        )
+        try:
+            with self._opener.open(req, timeout=timeout or self.timeout) as resp:
+                return resp.status, resp.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read().decode("utf-8", "replace")
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise TransportError(f"请求失败: {url}\n{exc}") from exc
+
     # ---------- 动作 ----------
 
-    def online(self) -> list[Session]:
-        payload = self.get(self.adapter.online_path, self.adapter.online_params())
-        rows = payload.get("list") or []
+    def prepare(self) -> None:
+        self.ctx = self.adapter.discover(self, self.account) or {}
+
+    def sessions(self) -> list[Session]:
+        payload = self.request(self.adapter.sessions_request(self))
         return [
             Session(
-                account=str(row.get("user_account") or ""),
+                account=str(row.get("user_account") or row.get("user_name") or ""),
                 ip=str(row.get("online_ip") or ""),
                 mac=str(row.get("online_mac") or ""),
-                time_long=str(row.get("time_long") or ""),
+                time_long=str(row.get("time_long") or row.get("add_time") or ""),
                 uplink=str(row.get("uplink_bytes") or ""),
                 downlink=str(row.get("downlink_bytes") or ""),
                 raw=row,
             )
-            for row in rows
-            if isinstance(row, dict)
+            for row in self.adapter.interpret_sessions(payload)
         ]
 
     def mine(self) -> Session | None:
-        for row in self.online():
-            if self.adapter.row_is_mine(row.raw or {}, self.ip, self.mac):
+        flag = self.adapter.online_check(self)
+        if flag is not None:
+            return Session(ip=self.ip, account=self.account) if flag else None
+        for row in self.sessions():
+            if self.adapter.row_is_mine(row.raw, self.ip, self.mac):
                 return row
         return None
 
-    def login(self, account: str, password: str, operator: str = "none") -> LoginResult:
-        params = self.adapter.login_params(
-            ip=self.ip, mac=self.mac, account=account, password=password, operator=operator
-        )
-        payload = self.get(self.adapter.login_path, params)
-        return self.adapter.interpret_login(payload)
+    def login(self) -> LoginResult:
+        if not self.ctx:
+            self.prepare()
+        payload = self.request(self.adapter.login_request(self))
+        result = self.adapter.interpret_login(payload)
+        self.adapter.after_login(self, payload)
+        return result
 
-    def logout(self) -> dict[str, Any]:
-        return self.get(
-            self.adapter.logout_path, self.adapter.logout_params(ip=self.ip, mac=self.mac)
-        )
+    def logout(self) -> dict[str, object]:
+        if not self.ctx:
+            self.prepare()
+        return self.request(self.adapter.logout_request(self))
 
-    def unbind(self, account: str) -> dict[str, Any]:
-        return self.get(
-            self.adapter.unbind_path,
-            self.adapter.unbind_params(ip=self.ip, mac=self.mac, account=account),
-        )
+    def unbind(self) -> dict[str, object]:
+        if not self.ctx:
+            self.prepare()
+        return self.request(self.adapter.unbind_request(self))
 
 
-def _raise_http(exc: urllib.error.HTTPError, body: str) -> dict[str, Any]:
+def _raise_http(exc: urllib.error.HTTPError, body: str) -> dict[str, object]:
     raise TransportError(f"HTTP {exc.code} {exc.reason}: {body[:200]!r}") from exc
 
 
@@ -204,4 +262,4 @@ def iter_retry_delays(attempts: int, base: float = 1.5, cap: float = 60.0) -> It
         yield min(cap, base * (2**i))
 
 
-__all__ = ["Portal", "Session", "extract_json", "RejectedError"]
+__all__ = ["Portal", "Session", "extract_json"]

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -369,7 +370,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _force_utf8() -> None:
+    """重定向到文件/管道时也保证输出是 UTF-8，别变成 GBK 乱码。"""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8()
     args = _parser().parse_args(argv)
     try:
         return args.func(args)

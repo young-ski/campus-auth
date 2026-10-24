@@ -1,0 +1,39 @@
+name: Bug 报告
+description: 登录失败、退出码不对、误报在线
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 命令、预期、实际。服务端原文请打码。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "`campus-auth --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 系统
+      options: [Windows, Linux, macOS]
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本
+      placeholder: "3.12.4"
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: 适配层
+      placeholder: huuc / 自己的模块
+    validations:
+      required: true

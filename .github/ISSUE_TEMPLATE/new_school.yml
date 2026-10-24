@@ -1,0 +1,60 @@
+name: 新增学校适配层
+description: 提交一所学校的适配层，让这所学校的人不用再折腾
+title: "adapter: "
+labels: ["adapter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看 [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) 的「加一所学校」。
+        打码规则：学号、密码、MAC 换成示例值；学校名和门户域名不用打码。
+  - type: input
+    id: school
+    attributes:
+      label: 学校
+      placeholder: XX 大学
+    validations:
+      required: true
+  - type: dropdown
+    id: portal
+    attributes:
+      label: 门户类型
+      options:
+        - Dr.COM eportal
+        - 其它（在校验说明里写）
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: 登录请求样本（打码）
+      description: 浏览器 F12 → Network，点一次登录，复制该请求的完整 URL 与响应体。参数值可以保留十六进制密文。
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: encoding
+    attributes:
+      label: 编码方式
+      description: 参数值是明文还是 `%xx` 十六进制？密钥怎么算（IP 异或 / MAC / 固定盐 / 无）？怎么发现的？
+    validations:
+      required: true
+  - type: textarea
+    id: tested
+    attributes:
+      label: 真机验证
+      description: 贴 `campus-auth status --adapter <你的代号>` 与一次 `login` 的输出（打码）。
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自查
+      options:
+        - label: 已跑过 `ruff check . && ruff format . && pytest`
+          required: true
+        - label: 没有把核心逻辑写成 `if school == "xx"`
+          required: true
+        - label: 提交里没有真实学号和密码
+          required: true

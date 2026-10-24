@@ -1,0 +1,14 @@
+# 复制成 campus-auth.toml 再改。campus-auth.toml 已在 .gitignore 里。
+adapter = "huuc"        # huuc / generic / 自己的模块:属性
+account = "081423456"   # 学号，纯数字，别带 @ 后缀
+password = ""           # 留空则读 $CAMPUS_AUTH_PASSWORD
+operator = "none"       # none / cmcc / unicom / dx
+
+# verify_tls = false    # 校园门户都是自签证书，默认就关着
+# timeout = 20
+# retries = 2
+# mac = ""              # 留空自动探测，取不到会填全 0
+# ip = ""               # 离线生成 URL 时可手动指定
+# base_url = ""         # 留空用适配层里的地址
+# interval = 120        # watch 两轮之间的基准秒数
+# probe_host = "www.baidu.com"

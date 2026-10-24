@@ -3,6 +3,7 @@
 用法速查（完整说明见 README）：
 
     campus-auth init                 生成配置模板
+    campus-auth probe --url URL      先确认门户是不是 Dr.COM
     campus-auth login                登录
     campus-auth status --json        查状态，给脚本用
     campus-auth check                查状态，用退出码表示结果
@@ -34,6 +35,7 @@ from .errors import (
     EnvironmentError_,
 )
 from .keepalive import Cycle, watch
+from .probe import probe, to_json
 from .runner import Context, _host_port, build, require_campus
 
 CONFIG_TEMPLATE = """\
@@ -94,6 +96,50 @@ def cmd_init(args: argparse.Namespace) -> int:
     _say(f"已写入 {target}")
     _say(f"下一步：填 account，导出 ${ENV_PASSWORD}，然后 `campus-auth status`")
     return EXIT_OK
+
+
+def cmd_probe(args: argparse.Namespace) -> int:
+    target = args.url or _adapter_base_url(args)
+    try:
+        analysis, used = probe(target, timeout=args.timeout or 8.0, verify=args.verify_tls)
+    except CampusAuthError as exc:
+        _err(str(exc))
+        _say("")
+        _say("提示：探针只从校园网内有效，先连学校 Wi-Fi 再试。")
+        return EXIT_ENV
+
+    if args.json:
+        _say(to_json(analysis, used))
+        return EXIT_OK if analysis.is_drcom else EXIT_REJECTED
+
+    label = {
+        "drcom": "是 Dr.COM（eportal）",
+        "likely-drcom": "像是 Dr.COM，但证据不全",
+        "ruijie": "是锐捷 ePortal，不是 Dr.COM",
+        "srun": "是深澜 Srun，不是 Dr.COM",
+        "unknown": "没认出来",
+    }[analysis.verdict]
+    _say(f"目标 {used}")
+    _say(f"判定: {label}   置信度: {analysis.confidence}（{analysis.score} 分）")
+    if analysis.evidence:
+        _say("")
+        for signal in analysis.evidence:
+            _say(f"  {'✓' if signal.hit else '·'} {signal.name} (+{signal.weight})")
+    for note in analysis.notes:
+        _say(f"! {note}")
+    _say("")
+    if analysis.is_drcom:
+        _say("可以用 huuc 当模板起适配层，主要改 base_url、路径和密钥函数。")
+        if analysis.missing:
+            _say("还缺证据: " + "、".join(analysis.missing[:3]))
+    else:
+        _say("不通用本仓库的适配层；确认方向再动手，别直接抄 huuc。")
+    return EXIT_OK if analysis.is_drcom else EXIT_REJECTED
+
+
+def _adapter_base_url(args: argparse.Namespace) -> str:
+    config = load(args.config, {})
+    return config.base_url or adapters.get_adapter(config.adapter).base_url
 
 
 def cmd_adapters(_: argparse.Namespace) -> int:
@@ -357,6 +403,11 @@ def _parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", parents=[common], help="只查在线状态，用退出码表达")
     check.add_argument("-q", "--quiet", action="store_true")
     check.set_defaults(func=cmd_check)
+
+    probe_p = sub.add_parser(
+        "probe", parents=[common], help="探测门户是不是 Dr.COM（--url 给地址）"
+    )
+    probe_p.set_defaults(func=cmd_probe)
 
     urls = sub.add_parser("urls", parents=[common], help="为当前 IP 生成快捷方式")
     urls.add_argument("-o", "--output", help="输出目录")

@@ -36,6 +36,47 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081425412@cmcc
   `AC认证失败` —— 客户端会先提示，再把服务端的黑话翻译成人话。
 - **给脚本用**：`--json` 加文档里那张退出码表，塞进计划任务和监控都不用解析中文。
 
+## 第一步：确认这所学校用的是不是 Dr.COM
+
+**别 clone 下来直接配。** 本项目只对 Dr.COM / eportal 有效，锐捷 ePortal、深澜 Srun、
+纯 802.1X 都不通用 —— 路径可能一模一样（锐捷也用 `/eportal/portal/login`），
+配半天才发现方向错，很常见。
+
+连上学校 Wi-Fi（**必须在校园网内**，手机热点不行）后先跑：
+
+```bash
+campus-auth probe --url http://10.210.213.208:802
+```
+
+```
+目标 http://10.210.213.208:802
+判定: 是 Dr.COM（eportal）   置信度: 高（180 分）
+
+  ✓ 页面 / JS 里出现 dr1003 一类回调 (+35)
+  ✓ JS 里有 enc_pwd（异或加密函数） (+30)
+  ✓ JS 里有 getkey（密钥派生） (+25)
+  ✓ 匿名接口回显了自己传的 callback（JSONP 可用） (+15)
+  ✓ 出现 wlan_user_ip 参数 (+15)
+```
+
+注意别被单条信号带偏：`dr1003` 只是**页面里出现过**才算数，因为 Dr.COM 会回显你传的
+任何 callback 名，光看回显锐捷也一样。所以 `probe` 至少要求 40 分才敢下"是 Dr.COM"，
+35 分只说"像"，并且会列出还缺哪些证据。
+
+`probe` 只请求匿名接口（根页面加一个 `online_list`），**不要账号密码**，
+判据是 Dr.COM 前端那套 `getkey` / `enc_pwd` / `dr1003` / `jsVersion` 指纹。
+结论分档：是 / 像但证据不全 / 是锐捷 / 是深澜 / 没认出来；
+`--json` 给机器读，退出码 0 命中、1 未命中、3 探不到（多半不在校园网）。
+
+探不到或判成别的，就别按 `huuc` 抄了，先确认门户类型：
+
+| probe 说 | 怎么办 |
+| --- | --- |
+| 是 Dr.COM | 抄 `huuc` 起适配层，改 `base_url`、路径、密钥函数 |
+| 像 Dr.COM，证据不全 | 手动 F12 抓一次登录请求核实，多半是内网门户换了参数名 |
+| 锐捷 / 深澜 | 能改，但 `login_params` 要整个重写，工作量翻倍 |
+| 没认出来 | 可能根本不是网页认证（802.1X 要装客户端），本项目不适用 |
+
 ## 安装
 
 ```bash
@@ -48,6 +89,7 @@ pip install git+https://github.com/young-ski/campus-auth
 ## 上手
 
 ```bash
+campus-auth probe                 # 0 步：先确认是 Dr.COM（见上）
 campus-auth init                  # 生成 campus-auth.toml
 # 编辑：填 account，password 留空
 export CAMPUS_AUTH_PASSWORD='...' # Windows: setx CAMPUS_AUTH_PASSWORD "..."
@@ -64,6 +106,7 @@ campus-auth watch                 # 断线自动重连，前台跑
 
 | 命令 | 作用 |
 | --- | --- |
+| `probe` | 探测门户是不是 Dr.COM，不需要账号（`--url` 给地址） |
 | `init` | 生成配置模板（`--force` 覆盖） |
 | `adapters` | 列出内置适配层 |
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
@@ -131,7 +174,9 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 
 ## 已知限制
 
-- 只覆盖网页版 eportal（`/eportal/portal/*`）。走 802.1X 或专用客户端加密的学校用不了。
+- 只覆盖网页版 eportal（`/eportal/portal/*`）。走 802.1X 或专用客户端加密的学校用不了 ——
+  先跑 `probe` 确认，别硬配。
+- `probe` 的指纹表是 Dr.COM 与锐捷/深澜的差异，不是抓包级证据；判成"证据不全"时仍需人工核实。
 - 应答里的运营商错误码只整理了城建遇到的四种，别的学校会落到通用提示。
 - 不做"绕过计费"，只是替你把官方的网页登录动作自动化。
 - 门户升级会改参数名，适配层跟着改；`generic` 模板就是为此留的。

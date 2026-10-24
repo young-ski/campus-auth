@@ -4,6 +4,8 @@
 
 ## 加一所学校
 
+0. **先跑 `campus-auth probe --url <门户地址>`**。判成锐捷/深澜/没认出来就先别写适配层，
+   方向不对会白写。判成 Dr.COM 再往下。
 1. 复制 `src/campus_auth/adapters/example_generic.py` 成 `你的学校代号.py`（用小写拼音缩写，
    例如 `hncj`）。
 2. 打开浏览器 F12 → Network，作为**普通用户**点一次登录，把真实请求抄下来。
@@ -35,3 +37,11 @@
 python -m pip install -e '.[dev]'
 pytest
 ```
+
+改 `probe` 的指纹表时，用假门户做端到端确认，别只跑单测：
+
+```bash
+python tools/fake_portal.py --style ruijie --port 8765   # drcom / ruijie / srun
+campus-auth probe --url http://127.0.0.1:8765
+```
+

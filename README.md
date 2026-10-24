@@ -15,7 +15,7 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081425412@cmcc
 结果: 已在线
 ```
 
-|| 协议 | 适配层 | 状态 |
+| 协议 | 适配层 | 状态 |
 | --- | --- | --- |
 | Dr.COM / eportal（`wlan_user_ip` + 异或） | `huuc` | **实机验证** |
 | 锐捷 `InterFace.do`（POST 表单 + 204 劫持发现） | `ruijie` | 未实机（假门户端到端通过） |

@@ -50,12 +50,15 @@ campus-auth probe --url http://10.210.213.208:802
 
 ```
 目标 http://10.210.213.208:802
-判定: 是 Dr.COM（eportal）   置信度: 高（180 分）
+判定: 是 Dr.COM（eportal）   置信度: 高（175 分）
 
   ✓ 页面 / JS 里出现 dr1003 一类回调 (+35)
+  ✓ 响应含 ret_code / result 字段 (+20)
+  ✓ 匿名接口回显了自己传的 callback（JSONP 可用） (+15)
   ✓ JS 里有 enc_pwd（异或加密函数） (+30)
   ✓ JS 里有 getkey（密钥派生） (+25)
-  ✓ 匿名接口回显了自己传的 callback（JSONP 可用） (+15)
+  ✓ JS 里有 jsVersion 参数 (+20)
+  ✓ 出现 Dr.COM / 城市热点 字样 (+15)
   ✓ 出现 wlan_user_ip 参数 (+15)
 ```
 

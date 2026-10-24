@@ -34,15 +34,15 @@ def test_dynamic_target_requires_instance(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.parametrize(
     ("operator", "expected"),
     [
-        ("none", ",0,081425412"),
-        ("cmcc", ",0,081425412@cmcc"),
-        ("unicom", ",0,081425412@unicom"),
-        ("dx", ",0,081425412@dx"),
-        ("", ",0,081425412"),
+        ("none", ",0,081456789"),
+        ("cmcc", ",0,081456789@cmcc"),
+        ("unicom", ",0,081456789@unicom"),
+        ("dx", ",0,081456789@dx"),
+        ("", ",0,081456789"),
     ],
 )
 def test_format_account(operator: str, expected: str) -> None:
-    assert HUUC.format_account("081425412", operator) == expected
+    assert HUUC.format_account("081456789", operator) == expected
 
 
 def test_operator_names() -> None:
@@ -51,7 +51,7 @@ def test_operator_names() -> None:
 
 def test_encoder_roundtrip() -> None:
     enc = HUUC.encoder(IP)
-    assert xor_unhex(enc("081425412"), 0x21) == "081425412"
+    assert xor_unhex(enc("081456789"), 0x21) == "081456789"
 
 
 def test_generic_encoder_is_identity() -> None:
@@ -59,7 +59,7 @@ def test_generic_encoder_is_identity() -> None:
 
 
 def fake_portal(**over):
-    base = dict(ip=IP, mac="0" * 12, account="081425412", password="pw", operator="cmcc", ctx={})
+    base = dict(ip=IP, mac="0" * 12, account="081456789", password="pw", operator="cmcc", ctx={})
     base.update(over)
     return SimpleNamespace(**base)
 

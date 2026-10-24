@@ -10,10 +10,12 @@ $ campus-auth probe
 判定: 是 Dr.COM（eportal）   置信度: 高（175 分）
 
 $ campus-auth login -w cmcc
-IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081425412@cmcc
+IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
 服务端: 认证成功  ret_code=0
 结果: 已在线
 ```
+
+上面这些学号、MAC、IP 都是编的，不用对号入座。
 
 | 协议 | 适配层 | 状态 |
 | --- | --- | --- |
@@ -150,7 +152,7 @@ campus-auth login --adapter srun --url http://10.20.30.1/
 
 ```toml
 adapter = "huuc"       # probe 判出来哪个填哪个：huuc / ruijie / srun
-account = "081423456"
+account = "081456789"
 password = ""          # 留空则读 $CAMPUS_AUTH_PASSWORD
 operator = "none"      # none / cmcc / unicom / dx（仅 Dr.COM 系有运营商后缀）
 base_url = ""          # 锐捷/深澜必填，指到门户页

@@ -28,7 +28,7 @@ def test_hex_matches_capture() -> None:
 
 @pytest.mark.parametrize("ip", ["10.152.59.163", "10.138.14.27", "192.168.1.1"])
 @pytest.mark.parametrize(
-    "text", ["", "1", "zh", ",0,081425412@cmcc", "4.2.1", "0.1234567890123456"]
+    "text", ["", "1", "zh", ",0,081456789@cmcc", "4.2.1", "0.1234567890123456"]
 )
 def test_roundtrip(ip: str, text: str) -> None:
     key = xor_key(ip)

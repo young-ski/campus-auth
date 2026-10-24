@@ -4,7 +4,7 @@
 #   ruijie  锐捷 ePortal —— 必须配 base_url
 #   srun    深澜 Srun —— 必须配 base_url 指到登录页
 adapter = "huuc"
-account = "081423456"   # 学号，纯数字，别带 @ 后缀
+account = "081456789"   # 学号，纯数字，别带 @ 后缀
 password = ""           # 留空则读 $CAMPUS_AUTH_PASSWORD
 operator = "none"       # none / cmcc / unicom / dx，仅 Dr.COM 系有意义
 

@@ -23,5 +23,6 @@ ADAPTER = Adapter(
     account_prefix=",0,",
     operator_suffixes={},
     js_version="4.2.1",
+    status="模板",
     notes="改 base_url 和各路径后先跑 `campus-auth status` 验证能不能连通。",
 )

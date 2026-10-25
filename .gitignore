@@ -13,3 +13,6 @@ dist/
 campus-auth.toml
 urls/
 *.log
+
+# 本地交接文档，按需改成提交
+HANDOFF.md

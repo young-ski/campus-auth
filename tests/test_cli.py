@@ -162,6 +162,33 @@ def test_unknown_adapter(campus: Path) -> None:
     assert run(["status", "--adapter", "nope"]) == 2
 
 
+# ---------- install / uninstall ----------
+
+
+def test_install_dry_run_prints_unit(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(campus / "cfg"))
+    monkeypatch.setenv("APPDATA", str(campus / "cfg"))
+    assert run(["install", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "campus_auth watch --config" in out
+    assert not (campus / "cfg").joinpath("campus-auth").exists()
+
+
+def test_install_without_config_is_rejected(
+    campus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CAMPUS_AUTH_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert run(["install"]) == 2
+
+
+def test_uninstall_dry_run(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(campus / "cfg"))
+    monkeypatch.setenv("APPDATA", str(campus / "cfg"))
+    assert run(["uninstall", "--dry-run"]) == 0
+    assert "要卸的是" in capsys.readouterr().out
+
+
 # ---------- urls / logout / unbind ----------
 
 

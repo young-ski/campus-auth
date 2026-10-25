@@ -9,6 +9,7 @@
     campus-auth check                查状态，用退出码表示结果
     campus-auth watch                断线自动重连
     campus-auth urls                 生成 .url / .desktop 快捷方式
+    campus-auth install / uninstall  把 watch 装成登录自启 / 卸掉
 """
 
 from __future__ import annotations
@@ -24,7 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, adapters, net
-from .config import ENV_PASSWORD, Config, load
+from . import install as installer
+from .config import ENV_PASSWORD, Config, find_config_file, load
 from .errors import (
     EXIT_CONFIG,
     EXIT_ENV,
@@ -374,6 +376,44 @@ def cmd_watch(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_install(args: argparse.Namespace) -> int:
+    config = _config(args)
+    path = find_config_file(args.config)
+    if path is None:
+        _say("! 没找到配置文件：自启要一个真实路径，先 `campus-auth init` 或 --config 指一个")
+        return EXIT_CONFIG
+
+    service = installer.service_for(path)
+    _say(f"要装的是: {service.kind} → {service.path}")
+    if not config.password:
+        _say("! 没读到密码：自启不继承当前 shell 的环境变量，密码得写进配置文件")
+    if args.dry_run:
+        _say("")
+        _say(service.content.rstrip())
+        for argv in service.create:
+            _say(f"$ {' '.join(argv)}")
+        return EXIT_OK
+
+    installer.install(service)
+    _say("已安装。")
+    for note in service.notes:
+        _say(f"· {note}")
+    return EXIT_OK
+
+
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    service = installer.service_for(find_config_file(args.config))
+    if args.dry_run:
+        _say(f"要卸的是: {service.kind} → {service.path}")
+        for argv in service.remove:
+            _say(f"$ {' '.join(argv)}")
+        return EXIT_OK
+
+    installer.uninstall(service)
+    _say(f"已卸载（{service.path}）。")
+    return EXIT_OK
+
+
 # ---------- 装配 ----------
 
 
@@ -460,6 +500,16 @@ def _parser() -> argparse.ArgumentParser:
     watch_p.add_argument("--cycles", type=int, help="跑多少轮后退出")
     watch_p.add_argument("--interval", type=float, help="两轮间隔秒数")
     watch_p.set_defaults(func=cmd_watch)
+
+    install_p = sub.add_parser(
+        "install", parents=[common], help="把 watch 装成登录自启（计划任务 / systemd / launchd）"
+    )
+    install_p.add_argument("--dry-run", action="store_true", help="只打印要写什么、跑什么")
+    install_p.set_defaults(func=cmd_install)
+
+    uninstall_p = sub.add_parser("uninstall", parents=[common], help="卸掉 install 装的自启")
+    uninstall_p.add_argument("--dry-run", action="store_true", help="只打印要跑什么")
+    uninstall_p.set_defaults(func=cmd_uninstall)
     return parser
 
 

@@ -119,8 +119,21 @@ campus-auth login --adapter ruijie --url http://10.20.30.1/eportal/index.jsp?wla
 campus-auth login --adapter srun --url http://10.20.30.1/
 ```
 
-`watch` 放到开机自启里就是长期方案（Windows 计划任务 → `campus-auth watch`，
-把标准输出重定向到日志文件）。
+## 开机自启
+
+`watch` 放前台只是临时用，长期靠 install 装成登录自启：
+
+```bash
+campus-auth install --dry-run     # 先看它要写什么、跑什么
+campus-auth install               # Windows: HKCU\...\Run + 一个 .cmd 包装
+                                  # Linux:   systemd --user unit
+                                  # macOS:   ~/Library/LaunchAgents/*.plist
+campus-auth uninstall             # 停掉并删干净
+```
+
+密码不会被代管：自启进程不继承你当前 shell 的环境变量，**密码得写进配置文件**
+（`password = "..."`），install 发现没密码会提醒。日志写在系统的 state 目录
+（Windows `%LOCALAPPDATA%\campus-auth\watch.log`，其他平台 `~/.local/state/campus-auth/`）。
 
 ## 命令与退出码
 
@@ -133,6 +146,7 @@ campus-auth login --adapter srun --url http://10.20.30.1/
 | `status` | 列出在线会话，`--json` 给机器读 |
 | `check` | 只判定在线与否，结果走退出码 |
 | `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔 |
+| `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
 | `urls` | 按当前 IP 生成 `.url` / `.desktop` 快捷方式（POST 类只有地址） |
 
 | 退出码 | 含义 |
@@ -227,6 +241,8 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 - 锐捷的 `unbind` 打的是 `InterFace.do?method=unbind`，只在假门户上验过：各校版本叫别的 method
   时会回 `method 不对`，改 [`ruijie.py`](src/campus_auth/adapters/ruijie.py) 的 `UNBIND_METHOD` 即可。
   有的版本还要求带密码，`unbind` 时给个 `-p` 就会带上。
+- `install` 在 Windows 上写 `HKCU\...\Run`；被组策略禁掉自启的机器会装不上，
+  失败时照 `--dry-run` 打印的那行命令手动加。
 - 深澜的 `unbind` 还没实现：eportal 那套通用解绑路径在深澜门户上只会取回登录页 HTML，
   命令会以 4 退出。
 - 锐捷的 `logout` 必须是本机 `login` 过之后的 12 小时内、且 IP 没变 —— `userIndex` 缓存在

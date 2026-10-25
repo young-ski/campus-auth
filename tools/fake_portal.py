@@ -56,14 +56,20 @@ function load(){jsonp('dr1003', {})}
 
 RUIJIE_PAGE = """<!doctype html><html><head><title>锐捷上网登录</title>
 <script src="/eportal/portal/js/index_1.js"></script></head>
-<body><form action="/eportal/portal/login">
-<input name="userAccount"><input name="userPassword" type="password"></form>
+<body><form action="/eportal/InterFace.do?method=login" method="post">
+<input name="userId"><input name="queryString" type="hidden"></form>
 <p>RG-SAM 锐捷</p></body></html>"""
 
-RUIJIE_JS = "function login(){var a=document.loginForm.userAccount.value}"
+RUIJIE_JS = """
+function login(){var q=window.location.search.substring(1);post('InterFace.do?method=login',
+  {userId:userId.value, queryString:enc(q)})}
+function unbind(){post('InterFace.do?method=unbind', {userIndex:userIndex})}
+"""
 
 SRUN_PAGE = """<!doctype html><html><body><p>深澜认证系统</p>
-<script>var ac_id='%(ac_id)s';var enc_ver='%(enc_ver)s';</script>
+<script>var ac_id='%(ac_id)s';var enc_ver='%(enc_ver)s';
+function get_challenge(){jsonp('/cgi-bin/get_challenge')}
+var info='%(prefix)s';</script>
 <form action="/cgi-bin/srun_portal"><input name="srun_bx1"></form></body></html>"""
 
 STATE = {"online": False, "seq": 0, "user_index": ""}
@@ -159,7 +165,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_page(self) -> None:
         if self.style == "srun":
-            return self._send(200, SRUN_PAGE % {"ac_id": AC_ID, "enc_ver": Handler.variant})
+            prefix = VARIANTS[Handler.variant][0]
+            page = SRUN_PAGE % {"ac_id": AC_ID, "enc_ver": Handler.variant, "prefix": prefix}
+            return self._send(200, page)
         return self._send(200, {"drcom": DRCOM_PAGE, "ruijie": RUIJIE_PAGE}[self.style])
 
     def do_POST(self) -> None:  # noqa: N802

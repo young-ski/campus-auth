@@ -1,10 +1,13 @@
-"""门户指纹识别：判断某地址是不是 Dr.COM，以及不是的话像什么。
+"""门户指纹识别：判断某地址是哪家认证门户（Dr.COM / 锐捷 / 深澜）。
 
 只碰匿名接口 —— 根页面、`online_list` 之类的公开路径，不需要账号密码。
 结论分四档，宁可说"证据不足"也不硬猜，因为猜错的代价是别人 clone 下来
 配半天适配层，跑起来才发现方向全错。
 
 打分是纯函数 `analyze()`，网络部分 `collect()` 只负责取样，方便测试。
+权重按"谁独有"排：`interface.do`、`srun_portal`、`enc_pwd` 这种给高权，
+JSONP 回显、`result` 字段这类谁都会有的给低权；两家分数咬得太紧就只给
+`likely-drcom` 并说明分不开（`THRESHOLD` / `MARGIN`）。
 """
 
 from __future__ import annotations
@@ -25,13 +28,20 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth/probe"
 MAX_BODY = 200_000
 MAX_JS = 3
 
-# 探针路径：都是匿名可访问的，且 Dr.COM / 锐捷 / 深澜 的反应互不相同
+# 探针路径：都是匿名可访问的，且 Dr.COM / 锐捷 / 深澜 的反应互不相同。
+# 锐捷的劫持页本身不带指纹，多问一句它的 index.jsp 和 InterFace.do 才看得见 InterFace.do。
 PROBE_PATHS = (
     "/",
+    "/eportal/index.jsp",
     "/eportal/portal/online_list?callback=probe1003&lang=zh",
+    "/eportal/InterFace.do?method=getOnlineUserInfo",
 )
 
 _JS_SRC = re.compile(r"""<script[^>]+src=["']([^"']+\.js[^"']*)["']""", re.IGNORECASE)
+# 劫持页把我们指去门户时，跟着走一步
+_CAPTIVE = re.compile(
+    r"""(?:location(?:\.href)?\s*=\s*|url\s*=\s*)['"]?(https?://[^'"\s>]{4,})""", re.IGNORECASE
+)
 
 
 @dataclass
@@ -84,31 +94,33 @@ def _check(needle: str | re.Pattern[str], haystack: str) -> bool:
 
 
 # (信号名, 权重, 归属, 在哪个样本里找, 匹配物)
+# 权重按"哪家独有"排：独有特征给高权重，通用 JSONP 行为给低权重。
 DRCOM_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
     ("页面 / JS 里出现 dr1003 一类回调", 35, "drcom", "all", re.compile(r"\bdr100[345]\b")),
+    ("JS 里有 enc_pwd（异或加密函数）", 30, "drcom", "js", "enc_pwd"),
+    ("JS 里有 getkey（密钥派生）", 25, "drcom", "js", "getkey"),
+    ("出现 wlan_user_ip 参数", 20, "drcom", "all", "wlan_user_ip"),
     (
         "响应含 ret_code / result 字段",
-        20,
+        15,
         "drcom",
         "body",
         re.compile(r'"(?:ret_code|result)"\s*:'),
     ),
+    ("JS 里有 jsVersion 参数", 15, "drcom", "all", "jsVersion"),
+    ("出现 Dr.COM / 城市热点 字样", 15, "drcom", "all", re.compile(r"dr\.?com|城市热点", re.I)),
+    ("有 eportal/portal/online_list 接口", 15, "drcom", "all", "eportal/portal/online_list"),
     (
         "匿名接口回显了自己传的 callback（JSONP 可用）",
-        15,
+        10,
         "drcom",
         "body",
         re.compile(r"\bprobe1003\s*\("),
     ),
-    ("JS 里有 enc_pwd（异或加密函数）", 30, "drcom", "js", "enc_pwd"),
-    ("JS 里有 getkey（密钥派生）", 25, "drcom", "js", "getkey"),
-    ("JS 里有 jsVersion 参数", 20, "drcom", "all", "jsVersion"),
-    ("出现 Dr.COM / 城市热点 字样", 15, "drcom", "all", re.compile(r"dr\.?com|城市热点", re.I)),
-    ("出现 wlan_user_ip 参数", 15, "drcom", "all", "wlan_user_ip"),
-    ("响应头 Set-Cookie 带 JSESSIONID", 5, "drcom", "headers", "jsessionid"),
 ]
 
 RUIJIE_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
+    ("出现 InterFace.do 接口", 40, "ruijie", "all", re.compile(r"interface\.do", re.I)),
     (
         "驼峰参数 userAccount / userPassword",
         35,
@@ -116,21 +128,29 @@ RUIJIE_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
         "all",
         re.compile(r"useraccount|userpassword", re.I),
     ),
-    ("出现 锐捷 / ruijie 字样", 20, "ruijie", "all", re.compile(r"ruijie|锐捷", re.I)),
-    ("eportal 路径但无 jsVersion", 25, "ruijie", "eportal-no-jsversion", ""),
+    ("出现 userIndex 字段", 20, "ruijie", "all", re.compile(r"userindex", re.I)),
+    ("出现 锐捷 / ruijie 字样", 15, "ruijie", "all", re.compile(r"ruijie|锐捷", re.I)),
+    ("有 index_1.jsp / index_1.js", 10, "ruijie", "all", re.compile(r"index_1\.(?:jsp|js)")),
+    ("eportal 路径但无 jsVersion", 10, "ruijie", "eportal-no-jsversion", ""),
 ]
 
 SRUN_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
     ("srun_portal 接口", 40, "srun", "all", "srun_portal"),
-    ("srun_bx1 / chap 参数", 20, "srun", "all", re.compile(r"srun_bx1|srun_chap")),
+    ("get_challenge 接口", 35, "srun", "all", "get_challenge"),
+    ("出现 {SRBX1} / {SRBX2} 密文前缀", 25, "srun", "all", re.compile(r"\{srbx[12]\}")),
+    ("出现 ac_id 参数", 20, "srun", "all", "ac_id"),
     ("出现 深澜 字样", 20, "srun", "all", "深澜"),
+    ("srun_bx1 / srun_chap 参数", 10, "srun", "all", re.compile(r"srun_bx1|srun_chap")),
 ]
 
 ELSEWHERE = [
-    ("有 index_1.html / 锐捷样式", 10, "ruijie", "all", "index_1.html"),
     ("有 eportal/portal/login 路径", 10, "eportal", "all", "eportal/portal/login"),
     ("Server 是 nginx 且端口像网关", 5, "drcom", "server", ""),
 ]
+
+# 各家认定的门槛，以及必须领先第二名多少分 —— 差得不多就只给"证据不全"。
+THRESHOLD = {"drcom": 40, "ruijie": 35, "srun": 40}
+MARGIN = 10
 
 
 def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = None) -> Analysis:
@@ -174,14 +194,21 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
 
     # 先看别的门户是否明显更像，再谈 Dr.COM：锐捷/深澜也会回显 callback、
     # 也可能吐 result/ret_code，光凭这两条会把它们误判成 Dr.COM。
-    if ruijie >= 40 and ruijie > drcom:
-        verdict = "ruijie"
-    elif srun >= 40 and srun > drcom:
-        verdict = "srun"
-    elif drcom >= 40:
-        verdict = "drcom"
+    # 领先不够就叫"证据不全"，宁可让人再抓一次包，也别把人指到错的适配层。
+    scores = {"drcom": drcom, "ruijie": ruijie, "srun": srun}
+    ranked = sorted(scores, key=lambda name: scores[name], reverse=True)
+    best, runner_up = ranked[0], ranked[1]
+    decisive = scores[best] >= THRESHOLD[best] and scores[best] - scores[runner_up] >= MARGIN
+
+    if decisive:
+        verdict = best
     elif drcom >= 25:
         verdict = "likely-drcom"
+        if scores[runner_up] >= 25:
+            notes.append(
+                f"Dr.COM 与 {runner_up} 的特征分不开（{drcom} vs {scores[runner_up]}），"
+                "先按 Dr.COM 试，不行再换"
+            )
     elif eportal:
         verdict = "unknown"
         notes.append("看到 eportal 路径，但没有加密特征，无法区分 Dr.COM 与锐捷")
@@ -234,12 +261,29 @@ def _fetch(
         raise TransportError(f"{url} 取不到: {exc}") from exc
 
 
+def _absorb(url: str, ctx: ssl.SSLContext, timeout: float, js_chunks: list[str]) -> str:
+    """取一个页面，顺手抓它的 JS；取不到就返回空串。"""
+    try:
+        text, _ = _fetch(url, ctx, timeout)
+    except TransportError:
+        return ""
+    for src in _JS_SRC.findall(text)[:MAX_JS]:
+        js_url = urllib.parse.urljoin(url, src)
+        try:
+            chunk, _ = _fetch(js_url, ctx, timeout, limit=MAX_BODY)
+        except TransportError:
+            continue
+        js_chunks.append(chunk)
+    return text
+
+
 def collect(
     base_url: str, *, timeout: float = 8.0, verify: bool = False
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
 
     返回 (样本, Server 头, 端口)。sample 键含 body / js / headers。
+    根页面若只是劫持跳转（锐捷常态），会跟着它给的地址再走一步。
     """
     parts = urllib.parse.urlsplit(base_url)
     if not parts.hostname:
@@ -276,6 +320,13 @@ def collect(
                 js_chunks.append(chunk)
         else:
             samples["body"] = samples.get("body", "") + "\n" + text
+
+    # 劫持页只给一句 location.href，指纹全在它指向的门户页上
+    captive = _CAPTIVE.search(samples.get("body", ""))
+    if captive:
+        page = _absorb(captive.group(1), ctx, timeout, js_chunks)
+        if page:
+            samples["body"] = samples.get("body", "") + "\n" + page
 
     if not ok:
         raise TransportError(f"{base_url} 一条探针都没通 —— 多半不在校园网内，或端口/协议写错了")

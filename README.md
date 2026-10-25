@@ -61,21 +61,22 @@ campus-auth probe --url http://10.210.213.208:802
 
 ```
 目标 http://10.210.213.208:802
-判定: 是 Dr.COM（eportal）   置信度: 高（175 分）
+判定: 是 Dr.COM（eportal）   置信度: 高（155 分）
 
   ✓ 页面 / JS 里出现 dr1003 一类回调 (+35)
-  ✓ 响应含 ret_code / result 字段 (+20)
-  ✓ 匿名接口回显了自己传的 callback（JSONP 可用） (+15)
   ✓ JS 里有 enc_pwd（异或加密函数） (+30)
   ✓ JS 里有 getkey（密钥派生） (+25)
-  ✓ JS 里有 jsVersion 参数 (+20)
+  ✓ 出现 wlan_user_ip 参数 (+20)
+  ✓ 响应含 ret_code / result 字段 (+15)
+  ✓ JS 里有 jsVersion 参数 (+15)
   ✓ 出现 Dr.COM / 城市热点 字样 (+15)
-  ✓ 出现 wlan_user_ip 参数 (+15)
+  ✓ 有 eportal/portal/online_list 接口 (+15)
 ```
 
 注意别被单条信号带偏：`dr1003` 只有**页面里出现过**才算数，因为 Dr.COM 会回显你传的
-任何 callback 名，光看回显锐捷也一样。所以 `probe` 至少要求 40 分才敢下"是 Dr.COM"，
-35 分只说"像"，并且会列出还缺哪些证据。
+任何 callback 名，光看回显锐捷也一样。所以权重按"哪家独有"排 —— `InterFace.do`、`srun_portal`、
+`enc_pwd` 这种高权，JSONP 回显、`result` 字段这种低权；一家要到 35～40 分**并且领先第二名
+10 分**才敢下结论，咬得紧就只说"像"，并列出还缺哪些证据。
 
 `probe` 只请求匿名接口，**不要账号密码**；`--json` 给机器读，退出码 0 命中、1 未命中、
 3 探不到（多半不在校园网）。判定结果直接对应到该用哪个适配层：
@@ -261,6 +262,7 @@ campus-auth status --adapter ./my_school.py:ADAPTER
   `state.json`，丢了就只能等门户自己超时，或者用 `unbind` 解掉绑定再登。
 - POST 类适配层（锐捷）的 `urls` 快捷方式只带地址、没有表单体，点开会是错误页 —— 用 `login`。
 - `probe` 的指纹表是判断"哪一家"，不是抓包级证据；判成"证据不全"时仍需人工核实。
+  权重是拿三套假门户的页面校准的（`tests/test_probe_against_fakes.py` 钉住），真机样本还没进来过。
 - 应答里的运营商错误码只整理了城建遇到的四种，别的学校会落到通用提示。
 - 不做"绕过计费"，只是替你把官方的网页登录动作自动化。
 - 门户升级会改参数名，适配层跟着改；`generic` 模板就是为此留的。

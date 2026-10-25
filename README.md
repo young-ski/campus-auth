@@ -93,10 +93,12 @@ campus-auth probe --url http://10.210.213.208:802
 
 ```bash
 pip install git+https://github.com/young-ski/campus-auth
+pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
 
-无第三方运行时依赖，Python ≥ 3.11。没有 pip 的机器直接用单文件：
-从 Releases 下 `campus-auth.pyz`，然后 `python campus-auth.pyz status`。
+默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
+没有 pip 的机器直接用单文件：从 Releases 下 `campus-auth.pyz`，然后
+`python campus-auth.pyz status`。
 
 ## 上手
 
@@ -268,6 +270,8 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 - 应答里的运营商错误码只整理了城建遇到的四种，别的学校会落到通用提示。
 - 不做"绕过计费"，只是替你把官方的网页登录动作自动化。
 - 门户升级会改参数名，适配层跟着改；`generic` 模板就是为此留的。
+
+变更历史见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 免责
 

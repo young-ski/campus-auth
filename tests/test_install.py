@@ -23,6 +23,8 @@ def test_systemd_unit_shape(tmp_path: Path) -> None:
     service = install.service_for(config, python="/usr/bin/python3", platform="linux")
     assert service.kind == "systemd"
     assert service.path.name == "campus-auth-watch.service"
+    # systemd 只扫 $XDG_CONFIG_HOME/systemd/user，多套一层 campus-auth/ 就找不到
+    assert service.path == tmp_path / "cfg" / "systemd" / "user" / "campus-auth-watch.service"
     # 带空格的路径要加引号，否则 systemd 会拆错
     assert f'ExecStart=/usr/bin/python3 -u -m campus_auth watch --config "{config}"' in (
         service.content

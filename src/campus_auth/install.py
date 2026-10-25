@@ -46,8 +46,16 @@ def _config_home(platform: str) -> Path:
     if platform == "win32":
         base = os.environ.get("APPDATA")
         return Path(base) / "campus-auth" if base else Path.home() / ".campus-auth"
-    config_home = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(config_home) / "campus-auth"
+    return _xdg_config_home() / "campus-auth"
+
+
+def _xdg_config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def _systemd_user_dir() -> Path:
+    """systemd 只认 `$XDG_CONFIG_HOME/systemd/user`，不能再往里套一层自己的目录。"""
+    return _xdg_config_home() / "systemd" / "user"
 
 
 def _state_home(platform: str) -> Path:
@@ -121,7 +129,7 @@ def _windows(command: list[str], platform: str) -> Service:
 
 
 def _systemd(command: list[str], platform: str) -> Service:
-    unit = _config_home(platform) / "systemd" / "user" / SERVICE_NAME
+    unit = _systemd_user_dir() / SERVICE_NAME
     log = _state_home(platform) / "watch.log"
     lines = [
         "[Unit]",

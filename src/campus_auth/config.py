@@ -57,9 +57,6 @@ class Config:
     probe_host: str = "www.baidu.com"
     check_url: str = ""
 
-    def fingerprint(self) -> str:
-        return f"{self.adapter}/{self.account}/{self.operator}"
-
     def validate(self, need_password: bool = True) -> None:
         missing = []
         if not self.adapter:

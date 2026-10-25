@@ -109,6 +109,7 @@ DRCOM_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
     ),
     ("JS 里有 jsVersion 参数", 15, "drcom", "all", "jsVersion"),
     ("出现 Dr.COM / 城市热点 字样", 15, "drcom", "all", re.compile(r"dr\.?com|城市热点", re.I)),
+    ("有 eportal/portal/login 路径", 15, "drcom", "all", "eportal/portal/login"),
     ("有 eportal/portal/online_list 接口", 15, "drcom", "all", "eportal/portal/online_list"),
     (
         "匿名接口回显了自己传的 callback（JSONP 可用）",
@@ -117,6 +118,7 @@ DRCOM_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
         "body",
         re.compile(r"\bprobe1003\s*\("),
     ),
+    ("Server 是 nginx 且端口像网关", 10, "drcom", "server", ""),
 ]
 
 RUIJIE_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
@@ -143,11 +145,6 @@ SRUN_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
     ("srun_bx1 / srun_chap 参数", 10, "srun", "all", re.compile(r"srun_bx1|srun_chap")),
 ]
 
-ELSEWHERE = [
-    ("有 eportal/portal/login 路径", 10, "eportal", "all", "eportal/portal/login"),
-    ("Server 是 nginx 且端口像网关", 5, "drcom", "server", ""),
-]
-
 # 各家认定的门槛，以及必须领先第二名多少分 —— 差得不多就只给"证据不全"。
 THRESHOLD = {"drcom": 40, "ruijie": 35, "srun": 40}
 MARGIN = 10
@@ -158,10 +155,9 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
     all_text = "\n".join(samples.values()).lower()
     body_text = samples.get("body", "").lower()
     js_text = samples.get("js", "").lower()
-    headers = samples.get("headers", "").lower()
     eportal = "eportal" in all_text
     has_jsversion = "jsversion" in all_text
-    scopes = {"all": all_text, "body": body_text, "js": js_text, "headers": headers}
+    scopes = {"all": all_text, "body": body_text, "js": js_text}
 
     evidence: list[Signal] = []
 
@@ -183,7 +179,6 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
     drcom = run(DRCOM_SIGNALS)
     ruijie = run(RUIJIE_SIGNALS)
     srun = run(SRUN_SIGNALS)
-    run(ELSEWHERE)
 
     notes: list[str] = []
     missing: list[str] = []
@@ -282,7 +277,7 @@ def collect(
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
 
-    返回 (样本, Server 头, 端口)。sample 键含 body / js / headers。
+    返回 (样本, Server 头, 端口)。sample 只含 body / js，头信息单独给。
     根页面若只是劫持跳转（锐捷常态），会跟着它给的地址再走一步。
     """
     parts = urllib.parse.urlsplit(base_url)
@@ -304,11 +299,6 @@ def collect(
             continue
         ok += 1
         server = server or headers.get("server", "")
-        samples["headers"] = (
-            samples.get("headers", "")
-            + "\n"
-            + "\n".join(f"{k}: {v}" for k, v in headers.items() if k in {"server", "set-cookie"})
-        )
         if path == "/":
             samples["body"] = text
             for src in _JS_SRC.findall(text)[:MAX_JS]:

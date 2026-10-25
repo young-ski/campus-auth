@@ -198,10 +198,6 @@ class Portal:
                 ) from exc
         raise TransportError(f"请求失败（已重试 {self.retries} 次）: {self.last_url}\n{last}")
 
-    def get(self, path: str, params: list) -> dict[str, object]:
-        """兼容旧写法：GET 一个路径。"""
-        return self.request(Request(path=path, params=list(params)))
-
     def raw(
         self,
         url: str,

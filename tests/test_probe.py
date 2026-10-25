@@ -60,13 +60,19 @@ def test_ruijie_wins_over_drcom_noise() -> None:
     """锐捷也会回显 callback、也吐 result/ret_code，不能让 Dr.COM 抢了判定。"""
     noisy = {
         "body": (
-            '<form action="/eportal/portal/login"><input name="userAccount">'
+            '<form action="/eportal/InterFace.do?method=login"><input name="userAccount">'
             ' probe1003({"result":1,"ret_code":0})'
         )
     }
     analysis = analyze(noisy)
     assert analysis.verdict == "ruijie"
     assert not analysis.is_drcom
+
+
+def test_camel_case_alone_is_not_enough_for_certainty() -> None:
+    """只有驼峰参数、没有 InterFace.do 时还在门槛上，别急着给"是锐捷"。"""
+    assert analyze({"body": '<input name="userAccount">'}).verdict == "ruijie"
+    assert analyze({}).verdict == "unknown"
 
 
 def test_eportal_alone_is_unknown() -> None:

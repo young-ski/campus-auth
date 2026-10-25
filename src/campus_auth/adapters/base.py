@@ -18,10 +18,11 @@ from __future__ import annotations
 import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from ..crypto import xor_hex, xor_key
 
-__all__ = ["Adapter", "LoginResult", "Param", "Request"]
+__all__ = ["Adapter", "LoginResult", "Param", "PortalLike", "Request"]
 
 
 class Param(tuple):
@@ -48,6 +49,26 @@ class Request:
     @property
     def is_absolute(self) -> bool:
         return self.path.startswith(("http://", "https://"))
+
+
+class PortalLike(Protocol):
+    """适配层眼里的 `Portal`：只承诺下面这些属性和动作。
+
+    真 `Portal` 结构性满足它；测试里的假门户类型不参与运行时检查，照旧能塞。
+    """
+
+    base_url: str
+    ip: str
+    mac: str
+    account: str
+    password: str
+    operator: str
+    check_url: str
+    ctx: dict[str, object]
+
+    def raw(self, url: str, *, timeout: float | None = None) -> tuple[int, str]: ...
+
+    def request(self, request: Request) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -139,14 +160,14 @@ class Adapter:
 
     # ---------- 发现（锐捷要门户地址，深澜要 challenge） ----------
 
-    def discover(self, portal: object, account: str) -> dict[str, object]:
+    def discover(self, portal: PortalLike, account: str) -> dict[str, object]:
         """登录前的准备请求；默认什么都不做。结果放进 `portal.ctx`。"""
         return {}
 
     # ---------- 请求构造 ----------
 
-    def login_request(self, portal: object) -> Request:
-        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
+    def login_request(self, portal: PortalLike) -> Request:
+        ip, mac = portal.ip, portal.mac
         cb = self.callback("1003")
         return Request(
             path=self.login_path,
@@ -154,16 +175,16 @@ class Adapter:
                 Param("callback", cb),
                 Param("login_method", "1"),
                 *self.account_params(
-                    portal.account,  # type: ignore[attr-defined]
-                    portal.password,  # type: ignore[attr-defined]
-                    portal.operator,  # type: ignore[attr-defined]
+                    portal.account,
+                    portal.password,
+                    portal.operator,
                 ),
                 *self.identity_params(ip, mac),
             ],
         )
 
-    def logout_request(self, portal: object) -> Request:
-        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
+    def logout_request(self, portal: PortalLike) -> Request:
+        ip, mac = portal.ip, portal.mac
         cb = self.callback("1004")
         return Request(
             path=self.logout_path,
@@ -179,11 +200,11 @@ class Adapter:
             ],
         )
 
-    def unbind_request(self, portal: object) -> Request:
-        ip, mac = portal.ip, portal.mac  # type: ignore[attr-defined]
+    def unbind_request(self, portal: PortalLike) -> Request:
+        ip, mac = portal.ip, portal.mac
         params = [
             Param("callback", self.callback("1005")),
-            Param("user_account", portal.account),  # type: ignore[attr-defined]
+            Param("user_account", portal.account),
             Param("wlan_user_mac", mac),
             Param("wlan_user_ip", ip),
         ]
@@ -197,7 +218,7 @@ class Adapter:
         ]
         return Request(path=self.unbind_path, params=params)
 
-    def sessions_request(self, portal: object) -> Request:
+    def sessions_request(self, portal: PortalLike) -> Request:
         return Request(path=self.online_path, params=self.online_params())
 
     def online_params(self) -> list[Param]:
@@ -228,14 +249,14 @@ class Adapter:
     def row_is_mine(self, row: Mapping[str, object], ip: str, mac: str) -> bool:
         return str(row.get("online_ip") or "") == ip
 
-    def online_check(self, portal: object) -> bool | None:
+    def online_check(self, portal: PortalLike) -> bool | None:
         """在线判定。返回 None 表示"走会话列表"，返回 True/False 表示自己判定。"""
         return None
 
-    def after_login(self, portal: object, payload: Mapping[str, object]) -> None:
+    def after_login(self, portal: PortalLike, payload: Mapping[str, object]) -> None:
         """登录成功后收尾（比如存下 userIndex）；默认什么都不做。"""
 
-    def after_logout(self, portal: object, payload: Mapping[str, object]) -> None:
+    def after_logout(self, portal: PortalLike, payload: Mapping[str, object]) -> None:
         """注销后的收尾（比如丢掉缓存的 userIndex）；默认什么都不做。"""
 
     def zone_hint(self, ip: str, ssid: str | None) -> str:

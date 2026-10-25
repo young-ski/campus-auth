@@ -36,13 +36,3 @@ class EnvironmentError_(CampusAuthError):
 
 class TransportError(CampusAuthError):
     exit_code = EXIT_TRANSPORT
-
-
-class RejectedError(CampusAuthError):
-    """服务端明确拒绝，携带 ret_code 与原始消息。"""
-
-    exit_code = EXIT_REJECTED
-
-    def __init__(self, message: str, ret_code: int | None = None) -> None:
-        super().__init__(message)
-        self.ret_code = ret_code

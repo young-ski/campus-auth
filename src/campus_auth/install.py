@@ -69,8 +69,18 @@ def _state_home(platform: str) -> Path:
 
 
 def _watch_command(python: str, config_path: Path) -> list[str]:
-    # -u：输出重定向进日志时要立刻落盘，别攒着
-    return [python, "-u", "-m", "campus_auth", "watch", "--config", str(config_path)]
+    # -u：输出进日志时要立刻落盘；--log 自己按大小轮转，别靠 shell 的 >>
+    return [
+        python,
+        "-u",
+        "-m",
+        "campus_auth",
+        "watch",
+        "--config",
+        str(config_path),
+        "--log",
+        str(_state_home(sys.platform) / "watch.log"),
+    ]
 
 
 def _argv_line(command: Sequence[str]) -> str:
@@ -109,7 +119,11 @@ def _windows(command: list[str], platform: str) -> Service:
         [
             "@echo off",
             "rem 由 `campus-auth install` 生成，改配置前先 uninstall",
-            f'{_argv_line(command)} >> "{log}" 2>&1',
+            # Run 键只在登录时拉起一次，没有守护进程：崩了就等半分钟再来
+            ":loop",
+            _argv_line(command),
+            "ping -n 31 127.0.0.1 >nul",
+            "goto loop",
             "",
         ]
     )
@@ -142,8 +156,6 @@ def _systemd(command: list[str], platform: str) -> Service:
         "Environment=PYTHONIOENCODING=utf-8",
         "Restart=always",
         "RestartSec=30",
-        f"StandardOutput=append:{log}",
-        f"StandardError=append:{log}",
         "",
         "[Install]",
         "WantedBy=default.target",
@@ -164,7 +176,7 @@ def _systemd(command: list[str], platform: str) -> Service:
         ],
         notes=[
             "只有登录着才跑；想登出后继续，跑一次 `loginctl enable-linger $USER`。",
-            f"日志在 {log}（`journalctl --user -u {SERVICE_NAME}` 也有）。",
+            f"日志在 {log}（自己按大小轮转）。",
         ],
     )
 
@@ -183,8 +195,6 @@ def _launchd(command: list[str], platform: str) -> Service:
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
-    <key>StandardOutPath</key><string>{log}</string>
-    <key>StandardErrorPath</key><string>{log}</string>
 </dict>
 </plist>
 """

@@ -38,6 +38,7 @@ from .errors import (
     EnvironmentError_,
 )
 from .keepalive import Cycle, watch
+from .logfile import RotatingLog, Tee
 from .probe import probe, to_json
 from .runner import Context, _host_port, build, require_campus
 
@@ -381,6 +382,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
     config = _config(args)
     build(config)  # 提前校验配置，失败就别进循环了
 
+    log = None
+    if args.log:
+        log = RotatingLog(Path(args.log))
+        sys.stdout = Tee(sys.stdout, log)  # type: ignore[assignment]
+        sys.stderr = Tee(sys.stderr, log)  # type: ignore[assignment]
+
     def make():
         return build(config).portal
 
@@ -400,18 +407,22 @@ def cmd_watch(args: argparse.Namespace) -> int:
         else:
             _say(f"[{stamp}] #{index} {cycle.message}")
 
-    return watch(
-        make,
-        account=config.account,
-        password=config.password,
-        operator=config.operator,
-        interval=args.interval if args.interval is not None else config.interval,
-        jitter=config.jitter,
-        probe_host=config.probe_host,
-        once=args.once,
-        max_cycles=args.cycles,
-        on_cycle=report,
-    )
+    try:
+        return watch(
+            make,
+            account=config.account,
+            password=config.password,
+            operator=config.operator,
+            interval=args.interval if args.interval is not None else config.interval,
+            jitter=config.jitter,
+            probe_host=config.probe_host,
+            once=args.once,
+            max_cycles=args.cycles,
+            on_cycle=report,
+        )
+    finally:
+        if log is not None:
+            log.close()
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -539,6 +550,7 @@ def _parser() -> argparse.ArgumentParser:
     watch_p.add_argument("--once", action="store_true", help="只跑一轮")
     watch_p.add_argument("--cycles", type=int, help="跑多少轮后退出")
     watch_p.add_argument("--interval", type=float, help="两轮间隔秒数")
+    watch_p.add_argument("--log", help="同时写进这个文件（按 1 MiB 轮转，留一份 .1）")
     watch_p.set_defaults(func=cmd_watch)
 
     password_p = sub.add_parser("password", parents=[common], help="把密码存进/删出系统钥匙串")

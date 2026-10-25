@@ -50,7 +50,10 @@ def test_windows_uses_run_key(tmp_path: Path) -> None:
     assert service.kind == "run-key"
     assert service.path.suffix == ".cmd"
     assert "@echo off" in service.content
-    assert ">>" in service.content  # 日志重定向
+    # 崩了要能自己重起：Run 键只在登录时拉一次，没有守护进程
+    assert ":loop" in service.content
+    assert "goto loop" in service.content
+    assert "--log" in service.content
     assert service.create[0][:3] == ["reg", "add", install.RUN_KEY]
     assert service.remove == [["reg", "delete", install.RUN_KEY, "/v", install.TASK_NAME, "/f"]]
 

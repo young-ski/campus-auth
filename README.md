@@ -134,7 +134,9 @@ campus-auth uninstall             # 停掉并删干净
 
 密码不会被代管：自启进程不继承你当前 shell 的环境变量，**密码得放进钥匙串
 或配置文件**，install 发现两处都没有会提醒。日志写在系统的 state 目录
-（Windows `%LOCALAPPDATA%\campus-auth\watch.log`，其他平台 `~/.local/state/campus-auth/`）。
+（Windows `%LOCALAPPDATA%\campus-auth\watch.log`，其他平台 `~/.local/state/campus-auth/`），
+`watch` 自己按 1 MiB 轮转、只留一份 `.1`。三条实现都带自动重启（Windows 靠 `.cmd` 里的
+循环，systemd 是 `Restart=always`，launchd 是 `KeepAlive`），崩了会自己回来。
 
 ## 命令与退出码
 
@@ -146,7 +148,7 @@ campus-auth uninstall             # 停掉并删干净
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定（深澜暂不支持 `unbind`） |
 | `status` | 列出在线会话，`--json` 给机器读 |
 | `check` | 只判定在线与否，结果走退出码 |
-| `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔 |
+| `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔，`--log` 同时落盘（自动轮转） |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
 | `password` | 密码存进/删出系统钥匙串（`--forget` 删） |
 | `urls` | 按当前 IP 生成 `.url` / `.desktop` 快捷方式（POST 类只有地址） |

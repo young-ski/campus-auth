@@ -359,3 +359,18 @@ def test_login_remember_failure_is_not_fatal(
     fake_portal(monkeypatch)
     assert run(["login", "-a", "0814", "-p", "pw", "--remember"]) == 0
     assert "钥匙串存不进去" in capsys.readouterr().out
+
+
+# ---------- watch --log ----------
+
+
+def test_watch_writes_log_file(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_portal(monkeypatch)
+    assert run(["watch", "--once", "--log", "w.log"]) == 0
+    assert "已重新登录" in (campus / "w.log").read_text(encoding="utf-8")
+
+
+def test_watch_log_still_prints(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    fake_portal(monkeypatch)
+    assert run(["watch", "--once", "--log", "w.log"]) == 0
+    assert "已重新登录" in capsys.readouterr().out

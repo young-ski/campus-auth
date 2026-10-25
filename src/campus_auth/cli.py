@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import getpass
 import json
 import os
 import sys
@@ -259,19 +260,35 @@ def cmd_password(args: argparse.Namespace) -> int:
         _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
         return EXIT_ENV
 
-    if args.password is not None or args.password_stdin:
-        if credentials.set(config.adapter, config.account, config.password):
-            _say(f"已存入钥匙串 {config.adapter}/{config.account}。")
-            return EXIT_OK
-        _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
-        return EXIT_ENV
+    if args.show:
+        stored = credentials.get(config.adapter, config.account)
+        if not stored:
+            _say(
+                f"{config.adapter}/{config.account} 没有存密码；跑 `campus-auth password` 存一个。"
+            )
+            return EXIT_REJECTED
+        _say(f"钥匙串里有 {config.adapter}/{config.account} 的密码（{len(stored)} 位）。")
+        return EXIT_OK
 
-    stored = credentials.get(config.adapter, config.account)
-    if not stored:
-        _say(f"{config.adapter}/{config.account} 没有存密码；给一个（-p 或标准输入）就会存。")
-        return EXIT_REJECTED
-    _say(f"钥匙串里有 {config.adapter}/{config.account} 的密码（{len(stored)} 位）。")
-    return EXIT_OK
+    secret = config.password
+    if args.password is None and not args.password_stdin:
+        if sys.stdin.isatty():
+            try:
+                secret = getpass.getpass(f"{config.adapter}/{config.account} 的密码: ")
+            except (EOFError, KeyboardInterrupt):
+                _say("")
+                return EXIT_REJECTED
+        else:
+            secret = sys.stdin.readline().rstrip("\r\n")
+    if not secret:
+        _say("没读到密码。")
+        return EXIT_CONFIG
+
+    if credentials.set(config.adapter, config.account, secret):
+        _say(f"已存入钥匙串 {config.adapter}/{config.account}。")
+        return EXIT_OK
+    _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+    return EXIT_ENV
 
 
 def _payload_ok(payload: dict) -> bool:
@@ -568,6 +585,7 @@ def _parser() -> argparse.ArgumentParser:
 
     password_p = sub.add_parser("password", parents=[common], help="把密码存进/删出系统钥匙串")
     password_p.add_argument("--forget", action="store_true", help="删掉存着的密码")
+    password_p.add_argument("--show", action="store_true", help="只看有没有存，不写入")
     password_p.set_defaults(func=cmd_password)
 
     install_p = sub.add_parser(

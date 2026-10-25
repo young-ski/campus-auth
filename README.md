@@ -152,7 +152,7 @@ campus-auth uninstall             # 停掉并删干净
 | `check` | 只判定在线与否，结果走退出码 |
 | `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔，`--log` 同时落盘（自动轮转） |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
-| `password` | 密码存进/删出系统钥匙串（`--forget` 删） |
+| `password` | 密码存进/删出系统钥匙串（交互式输入，`--show` 看状态，`--forget` 删） |
 | `urls` | 按当前 IP 生成 `.url` / `.desktop` 快捷方式（POST 类只有地址） |
 
 | 退出码 | 含义 |
@@ -191,8 +191,8 @@ interval = 120
 
 ```bash
 pip install "campus-auth[keyring]"   # 只装这个功能
-campus-auth password                 # 看有没有存
-campus-auth password -p '...'        # 存（也可以 echo -n '...' | campus-auth password）
+campus-auth password                 # 交互式输入（不回显）；管道里则读一行
+campus-auth password --show          # 只看有没有存
 campus-auth password --forget        # 删
 campus-auth login --remember         # 或者登录成功时顺手存
 ```

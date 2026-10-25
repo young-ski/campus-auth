@@ -309,7 +309,7 @@ def test_password_status(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) 
     from campus_auth import credentials
 
     monkeypatch.setattr(credentials, "get", lambda *_a: "abcdef")
-    assert run(["password"]) == 0
+    assert run(["password", "--show"]) == 0
     assert "6 位" in capsys.readouterr().out
 
 
@@ -317,7 +317,7 @@ def test_password_status_when_empty(campus: Path, monkeypatch: pytest.MonkeyPatc
     from campus_auth import credentials
 
     monkeypatch.setattr(credentials, "get", lambda *_a: "")
-    assert run(["password"]) == 1
+    assert run(["password", "--show"]) == 1
     assert "没有存密码" in capsys.readouterr().out
 
 
@@ -394,3 +394,39 @@ def test_unbind_transport_error_prints_hint(
     out = capsys.readouterr().out
     assert "解绑失败" in out
     assert "没有解绑接口" in out
+
+
+def test_password_prompts_on_tty(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import cli, credentials
+
+    saved: list[str] = []
+    monkeypatch.setattr(credentials, "set", lambda a, acc, p: saved.append(p) or True)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "typed")
+    assert run(["password"]) == 0
+    assert saved == ["typed"]
+
+
+def test_password_reads_stdin_when_not_tty(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import cli, credentials
+
+    saved: list[str] = []
+    monkeypatch.setattr(credentials, "set", lambda a, acc, p: saved.append(p) or True)
+    monkeypatch.setattr(
+        cli.sys,
+        "stdin",
+        type("S", (), {"isatty": lambda self: False, "readline": lambda self: "piped\n"})(),
+    )
+    assert run(["password"]) == 0
+    assert saved == ["piped"]
+
+
+def test_password_empty_input(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import cli
+
+    monkeypatch.setattr(
+        cli.sys,
+        "stdin",
+        type("S", (), {"isatty": lambda self: False, "readline": lambda self: "\n"})(),
+    )
+    assert run(["password"]) == 2

@@ -20,13 +20,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .errors import EnvironmentError_, TransportError
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth/probe"
 MAX_BODY = 200_000
-MAX_JS = 3
+MAX_JS = 1  # 指纹基本都在第一个脚本里，多抓只是拖慢
 
 # 探针路径：都是匿名可访问的，且 Dr.COM / 锐捷 / 深澜 的反应互不相同。
 # 锐捷的劫持页本身不带指纹，多问一句它的 index.jsp 和 InterFace.do 才看得见 InterFace.do。
@@ -291,25 +292,31 @@ def collect(
     js_chunks: list[str] = []
     ok = 0
 
-    for path in PROBE_PATHS:
+    def grab(path: str) -> tuple[str, str, str, dict[str, str]] | None:
         url = urllib.parse.urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
         try:
             text, headers = _fetch(url, ctx, timeout)
         except TransportError:
-            continue
-        ok += 1
-        server = server or headers.get("server", "")
-        if path == "/":
-            samples["body"] = text
-            for src in _JS_SRC.findall(text)[:MAX_JS]:
-                js_url = urllib.parse.urljoin(url, src)
-                try:
-                    chunk, _ = _fetch(js_url, ctx, timeout, limit=MAX_BODY)
-                except TransportError:
-                    continue
-                js_chunks.append(chunk)
-        else:
-            samples["body"] = samples.get("body", "") + "\n" + text
+            return None
+        return path, url, text, headers
+
+    # 四条路径并发：校园网慢的时候不至于按 4 倍超时等
+    with ThreadPoolExecutor(max_workers=len(PROBE_PATHS)) as pool:
+        for got in pool.map(grab, PROBE_PATHS):
+            if got is None:
+                continue
+            path, url, text, headers = got
+            ok += 1
+            server = server or headers.get("server", "")
+            samples["body"] = text if path == "/" else samples.get("body", "") + "\n" + text
+            if path == "/":
+                for src in _JS_SRC.findall(text)[:MAX_JS]:
+                    js_url = urllib.parse.urljoin(url, src)
+                    try:
+                        chunk, _ = _fetch(js_url, ctx, timeout, limit=MAX_BODY)
+                    except TransportError:
+                        continue
+                    js_chunks.append(chunk)
 
     # 劫持页只给一句 location.href，指纹全在它指向的门户页上
     captive = _CAPTIVE.search(samples.get("body", ""))

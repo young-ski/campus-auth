@@ -9,8 +9,8 @@
 - `install` / `uninstall`：把 `watch` 装成登录自启（Windows `HKCU\...\Run` + `.cmd`，
   Linux `systemd --user`，macOS LaunchAgent），`--dry-run` 只打印；三条实现都带自动重启
 - `watch --log`：自己写日志并按 1 MiB 轮转，留一份 `.1`
-- 可选 `keyring`：`password` 命令存取、`login --remember` 顺手存；
-  密码解析顺序变成 `$CAMPUS_AUTH_PASSWORD` > 配置文件 > 钥匙串
+- 可选 `keyring`：`password` 命令存取（交互式隐藏输入、`--show` 看状态）、
+  `login --remember` 顺手存；密码解析顺序变成 `$CAMPUS_AUTH_PASSWORD` > 配置文件 > 钥匙串
 - 深澜 `srun_bx2` 变体：按页面里的 `enc_ver` 自动切换 `{SRBX2}` + 标准 base64
 - 锐捷解绑：`InterFace.do?method=unbind`，`userIndex` 落盘 12 小时支撑跨进程注销
 
@@ -24,7 +24,7 @@
 ### 变更
 
 - `probe` 权重按"哪家独有"重排，判定要过门槛并领先 10 分；采样补
-  `/eportal/index.jsp`、`InterFace.do`，并跟随劫持跳转
+  `/eportal/index.jsp`、`InterFace.do`，并跟随劫持跳转；四条探针并发，慢网不再按 4 倍超时等
 - 适配层签名改用 `PortalLike` 协议，去掉满地的 `type: ignore`
 - 假门户补 `--variant`，锐捷解绑/深澜 `info` 都会真校验
 

@@ -10,6 +10,9 @@
 
 `ac_id` 各校不同，从登录页里的 `ac_id` 常量读；读不到给 "0"（不少学校就是 0）。
 
+`enc_ver` 有两代：`srun_bx1`（深澜自家 base64 字母表）和 `srun_bx2`（标准 base64，
+前缀 `{SRBX2}`）。从登录页脚本里的 `enc_ver` 认，认不出按 `srun_bx1`。
+
 状态：**未实机验证**。算法对照 vidar-team/srun-login 实现并用其向量钉住，
 但各校 Srun 版本差异大（`srun_bx1` / `srun_bx2`），跑不通请开 Issue 带打码样本。
 """
@@ -18,13 +21,22 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 
-from ..crypto_srun import hmac_md5_hex, sha1_hex, srun_b64, xxtea
+from ..crypto_srun import hmac_md5_hex, sha1_hex, srun_b64, srun_b64_std, xxtea
 from ..errors import ConfigError
 from .base import Adapter, LoginResult, Param, Request
 
 _AC_ID = re.compile(r"""ac_id["'\s:=]+\s*["']?(\d+)""", re.IGNORECASE)
+_ENC_VER = re.compile(r"""srun_bx[12]""", re.IGNORECASE)
 _N, _TYPE = "200", "1"
+
+# 变体 -> (info 前缀, base64 编码器)。`enc_ver` 本来就是变体名，直接当键用。
+VARIANTS: dict[str, tuple[str, Callable[[bytes], str]]] = {
+    "srun_bx1": ("{SRBX1}", srun_b64),
+    "srun_bx2": ("{SRBX2}", srun_b64_std),
+}
+DEFAULT_VARIANT = "srun_bx1"
 
 HINTS = {
     "login_error": "账号或密码不对；深澜的账号通常是学号。",
@@ -43,7 +55,7 @@ class SrunAdapter(Adapter):
             base_url="http://10.0.0.1",
             key_style="plain",
             status="未实机",
-            notes="必须 --url 指向校园网登录页（ac_id 从页面里读）。",
+            notes="必须 --url 指向校园网登录页（ac_id 与 enc_ver 从页面里读）。",
             logout_needs_password=True,  # 注销也要 chksum，密码少不得
         )
 
@@ -55,6 +67,8 @@ class SrunAdapter(Adapter):
             raise ConfigError(f"取登录页失败（HTTP {status}）：确认 --url 指到了校园网门户")
         match = _AC_ID.search(page)
         ac_id = match.group(1) if match else "0"
+        found = _ENC_VER.search(page)
+        enc_ver = found.group(0).lower() if found else DEFAULT_VARIANT
 
         payload = portal.request(
             Request(
@@ -70,25 +84,32 @@ class SrunAdapter(Adapter):
         if not challenge:
             raise ConfigError(f"get_challenge 没给 challenge: {payload}")
         client_ip = str(payload.get("client_ip") or portal.ip)
-        return {"challenge": challenge, "client_ip": client_ip, "ac_id": ac_id}
+        return {"challenge": challenge, "client_ip": client_ip, "ac_id": ac_id, "enc_ver": enc_ver}
 
     # ---------- 登录 ----------
 
     def _hmd5(self, portal) -> str:
         return hmac_md5_hex(portal.password, str(portal.ctx["challenge"]))
 
+    def _variant(self, portal) -> tuple[str, str, Callable[[bytes], str]]:
+        """返回 (enc_ver, info 前缀, base64 编码器)。认不出的变体按 bx1 走。"""
+        enc_ver = str(portal.ctx.get("enc_ver") or DEFAULT_VARIANT)
+        prefix, encode = VARIANTS.get(enc_ver, VARIANTS[DEFAULT_VARIANT])
+        return enc_ver, prefix, encode
+
     def _info(self, portal) -> str:
+        enc_ver, prefix, encode = self._variant(portal)
         info = {
             "username": portal.account,
             "password": portal.password,
             "ip": str(portal.ctx["client_ip"]),
             "acid": str(portal.ctx["ac_id"]),
-            "enc_ver": "srun_bx1",
+            "enc_ver": enc_ver,
         }
         blob = xxtea(
             json.dumps(info, separators=(",", ":")).encode(), str(portal.ctx["challenge"]).encode()
         )
-        return "{SRBX1}" + srun_b64(blob)
+        return prefix + encode(blob)
 
     def _chksum(self, portal, info: str) -> str:
         challenge = str(portal.ctx["challenge"])

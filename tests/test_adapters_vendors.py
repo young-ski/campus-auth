@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
 
 import pytest
 
@@ -303,6 +305,60 @@ def test_srun_info_uses_custom_base64() -> None:
     info = {p.key: p.value for p in SRUN.login_request(portal).params}["info"]
     assert srun_b64(b"") == ""
     assert all(c not in info[len("{SRBX1}") :] for c in "_-")
+
+
+# ---------- 深澜 srun_bx2 变体 ----------
+
+
+def srun_bx2_portal() -> FakePortal:
+    portal = srun_portal("key1234")
+    portal.pages["http://1.2.3.4/"] = (
+        200,
+        "<script>var ac_id='12';var enc_ver='srun_bx2';</script>",
+    )
+    return portal
+
+
+def test_srun_detects_bx2_from_login_page() -> None:
+    portal = srun_bx2_portal()
+    assert SRUN.discover(portal, portal.account)["enc_ver"] == "srun_bx2"
+
+
+def test_srun_defaults_to_bx1() -> None:
+    portal = srun_portal()
+    assert SRUN.discover(portal, portal.account)["enc_ver"] == "srun_bx1"
+
+
+def test_srun_bx2_uses_srbx2_and_standard_base64() -> None:
+    portal = srun_bx2_portal()
+    portal.ctx = SRUN.discover(portal, portal.account)
+    info = {p.key: p.value for p in SRUN.login_request(portal).params}["info"]
+    assert info.startswith("{SRBX2}")
+    payload = info[len("{SRBX2}") :]
+    # 标准字母表：解得回来，且和 bx1 的密文一模一样（只换了 base64 表）
+    cipher = base64.b64decode(payload, validate=True)
+    assert cipher == xxtea(
+        json.dumps(
+            {
+                "username": portal.account,
+                "password": portal.password,
+                "ip": IP,
+                "acid": "12",
+                "enc_ver": "srun_bx2",
+            },
+            separators=(",", ":"),
+        ).encode(),
+        b"key1234",
+    )
+
+
+def test_srun_bx2_chksum_still_covers_info() -> None:
+    portal = srun_bx2_portal()
+    portal.ctx = SRUN.discover(portal, portal.account)
+    params = {p.key: p.value for p in SRUN.login_request(portal).params}
+    expected_md5 = hmac.new(b"key1234", b"secret", hashlib.md5).hexdigest()
+    fields = [portal.account, expected_md5, "12", IP, "200", "1", params["info"]]
+    assert params["chksum"] == sha1_hex("".join("key1234" + f for f in fields))
 
 
 @pytest.mark.parametrize(

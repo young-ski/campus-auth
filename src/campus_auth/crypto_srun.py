@@ -3,6 +3,7 @@
 跟 Dr.COM 那套"异或一下"完全不是一回事：
 
 * `info` 字段 = XXTEA(json, challenge) 再走深澜自带字母表的 base64，前面挂 `{SRBX1}`
+  —— 新一点的 `srun_bx2` 变体改用**标准** base64 和 `{SRBX2}`，见 `srun_b64_std`
 * `password` 字段 = `{MD5}` + hmac_md5(key=challenge, msg=密码)
 * `chksum` = sha1(challenge + 用户名 + 上面那个 md5 + ac_id + ip + n + type + info)
 
@@ -16,7 +17,7 @@ import base64
 import hashlib
 import hmac
 
-__all__ = ["xxtea", "srun_b64", "hmac_md5_hex", "sha1_hex", "SRUN_ALPHA"]
+__all__ = ["xxtea", "srun_b64", "srun_b64_std", "hmac_md5_hex", "sha1_hex", "SRUN_ALPHA"]
 
 _MASK = 0xFFFFFFFF
 _DELTA = 0x9E3779B9
@@ -83,8 +84,13 @@ def xxtea(content: bytes, key: bytes) -> bytes:
 
 
 def srun_b64(data: bytes) -> str:
-    """按深澜的字母表做 base64。"""
+    """按深澜的字母表做 base64（`srun_bx1`）。"""
     return base64.b64encode(data).decode().translate(_XLATE)
+
+
+def srun_b64_std(data: bytes) -> str:
+    """标准字母表的 base64（`srun_bx2` 用这个，别再换回深澜表）。"""
+    return base64.b64encode(data).decode()
 
 
 def hmac_md5_hex(message: str, key: str) -> str:

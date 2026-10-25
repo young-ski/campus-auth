@@ -4,28 +4,41 @@
     python tools/fake_portal.py --style drcom  --port 8765
     python tools/fake_portal.py --style ruijie --port 8765
     python tools/fake_portal.py --style srun   --port 8765
+    python tools/fake_portal.py --style srun --variant srun_bx2   # 另一代 info 编码
 
     campus-auth probe --url http://127.0.0.1:8765
     campus-auth login --adapter ruijie --url http://127.0.0.1:8765 -a 20240001 -p pw
 
-账号固定 `20240001`，密码 `pw`。服务端会真的验一遍签名（深澜）和表单（锐捷），
-所以 `login` 能过就说明客户端实现是对的。
+账号固定 `20240001`，密码 `pw`。服务端会真的验一遍签名（深澜，按变体挑 base64
+字母表）和表单（锐捷），所以 `login` 能过就说明客户端实现是对的。
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from campus_auth.crypto_srun import sha1_hex
+from campus_auth.crypto_srun import SRUN_ALPHA, sha1_hex
 
 ACCOUNT, PASSWORD = "20240001", "pw"
 AC_ID, CHALLENGE = "12", "fakechallenge1234"
 CHALLENGE_HOST = "127.0.0.1"
+STD_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+# 变体 -> (info 前缀, 解码器)；跟适配层那边的 VARIANTS 一一对应
+VARIANTS = {
+    "srun_bx1": (
+        "{SRBX1}",
+        lambda text: base64.b64decode(
+            text.translate(str.maketrans(SRUN_ALPHA, STD_ALPHA)), validate=True
+        ),
+    ),
+    "srun_bx2": ("{SRBX2}", lambda text: base64.b64decode(text, validate=True)),
+}
 
 DRCOM_PAGE = """<!doctype html><html><head><title>Dr.COM 校园网登录</title>
 <script src="/eportal/portal/js/a41.js"></script></head>
@@ -50,7 +63,7 @@ RUIJIE_PAGE = """<!doctype html><html><head><title>锐捷上网登录</title>
 RUIJIE_JS = "function login(){var a=document.loginForm.userAccount.value}"
 
 SRUN_PAGE = """<!doctype html><html><body><p>深澜认证系统</p>
-<script>var ac_id='%(ac_id)s';</script>
+<script>var ac_id='%(ac_id)s';var enc_ver='%(enc_ver)s';</script>
 <form action="/cgi-bin/srun_portal"><input name="srun_bx1"></form></body></html>"""
 
 STATE = {"online": False, "seq": 0, "user_index": ""}
@@ -58,6 +71,7 @@ STATE = {"online": False, "seq": 0, "user_index": ""}
 
 class Handler(BaseHTTPRequestHandler):
     style = "drcom"
+    variant = "srun_bx1"
 
     # ---------- 工具 ----------
 
@@ -145,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_page(self) -> None:
         if self.style == "srun":
-            return self._send(200, SRUN_PAGE % {"ac_id": AC_ID})
+            return self._send(200, SRUN_PAGE % {"ac_id": AC_ID, "enc_ver": Handler.variant})
         return self._send(200, {"drcom": DRCOM_PAGE, "ruijie": RUIJIE_PAGE}[self.style])
 
     def do_POST(self) -> None:  # noqa: N802
@@ -191,8 +205,15 @@ class Handler(BaseHTTPRequestHandler):
 
         user = (query.get("username") or [""])[0]
         info = (query.get("info") or [""])[0]
-        if user != ACCOUNT or not info.startswith("{SRBX1}"):
+        prefix, decode = VARIANTS[Handler.variant]
+        if user != ACCOUNT or not info.startswith(prefix):
             return self._json({"error": "login_error", "error_msg": "参数不全"}, callback)
+        try:
+            decode(info[len(prefix) :])
+        except ValueError:
+            return self._json(
+                {"error": "login_error", "error_msg": "info 不是合法 base64"}, callback
+            )
 
         md5 = hmac.new(CHALLENGE.encode(), PASSWORD.encode(), hashlib.md5).hexdigest()
         if (query.get("password") or [""])[0] != "{MD5}" + md5:
@@ -214,9 +235,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--style", choices=["drcom", "ruijie", "srun"], default="drcom")
+    parser.add_argument("--variant", choices=sorted(VARIANTS), default="srun_bx1")
     args = parser.parse_args()
     Handler.style = args.style
-    print(f"假 {args.style} 门户起在 http://127.0.0.1:{args.port}（账号 {ACCOUNT} / {PASSWORD}）")
+    Handler.variant = args.variant
+    extra = f"，深澜变体 {args.variant}" if args.style == "srun" else ""
+    print(f"假 {args.style} 门户起在 http://127.0.0.1:{args.port}{extra}")
+    print(f"账号 {ACCOUNT} / {PASSWORD}")
     HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 

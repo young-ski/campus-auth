@@ -182,8 +182,8 @@ interval = 120
 | `generic` | 未具名 eportal | 模板 | 按学校改 |
 
 `ruijie` / `srun` 的协议细节都有测试钉住（深澜的 XXTEA 用上游测试向量对过），
-`tools/fake_portal.py` 能起同款假门户做端到端。但没在真实设备上跑过 ——
-第一次当实验用，报错请开 Issue。
+`tools/fake_portal.py` 能起同款假门户做端到端（深澜可加 `--variant` 切两代编码）。
+但没在真实设备上跑过 —— 第一次当实验用，报错请开 Issue。
 
 想加自己学校，看 [`CONTRIBUTING.md`](CONTRIBUTING.md)，抄
 [`example_generic.py`](src/campus_auth/adapters/example_generic.py) 就够了。
@@ -209,8 +209,11 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 解绑认学号，跨进程也能跑。
 
 **深澜**：`get_challenge` 取一次性 challenge，`password` 传 `{MD5}` + HMAC-MD5，
-`info` 传 `{SRBX1}` + XXTEA(json)，再用 sha1 对整串签名成 `chksum`，
+`info` 传 `{SRBX1}` + XXTEA(json) 的深澜 base64，再用 sha1 对整串签名成 `chksum`，
 在线的判据是 `rad_user_info` 的 `error` 字段。
+
+新版门户的 `info` 换成 `{SRBX2}` + **标准** base64（`srun_bx2`），从登录页脚本里的
+`enc_ver` 自动认，认不出按 `srun_bx1`。
 
 细节见 [`crypto.py`](src/campus_auth/crypto.py)、[`crypto_srun.py`](src/campus_auth/crypto_srun.py)
 和三个适配层。
@@ -218,7 +221,9 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 ## 已知限制
 
 - 只覆盖网页认证门户。走 802.1X 或专用客户端加密的学校用不了 —— 先跑 `probe`，别硬配。
-- `ruijie` / `srun` **未实机验证**，各校版本差异大（深澜还有 `srun_bx2`），可能需要改适配层。
+- `ruijie` / `srun` **未实机验证**，各校版本差异大，可能需要改适配层。
+- 深澜的 `srun_bx2` 是照公开资料实现的，只在假门户（`--variant srun_bx2`）上过过；
+  真门户若用别的写法声明 `enc_ver`，会识别不出来而退回 `srun_bx1`，表现为 `info` 被拒。
 - 锐捷的 `unbind` 打的是 `InterFace.do?method=unbind`，只在假门户上验过：各校版本叫别的 method
   时会回 `method 不对`，改 [`ruijie.py`](src/campus_auth/adapters/ruijie.py) 的 `UNBIND_METHOD` 即可。
   有的版本还要求带密码，`unbind` 时给个 `-p` 就会带上。

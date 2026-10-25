@@ -283,3 +283,79 @@ def test_logout_hint_does_not_repeat_the_message(
     assert run(["logout", "--config", str(config)]) == 1
     out = capsys.readouterr().out
     assert out.count("没收录的新错") == 1
+
+
+# ---------- password / keyring ----------
+
+
+def test_password_stores_for_adapter_and_account(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth import credentials
+
+    saved: dict[str, str] = {}
+
+    def fake_set(adapter: str, account: str, password: str) -> bool:
+        saved.update(adapter=adapter, account=account, password=password)
+        return True
+
+    monkeypatch.setattr(credentials, "set", fake_set)
+    assert run(["password", "-p", "s3cret"]) == 0
+    assert saved == {"adapter": "huuc", "account": "0814", "password": "s3cret"}
+    assert "已存入" in capsys.readouterr().out
+
+
+def test_password_status(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "get", lambda *_a: "abcdef")
+    assert run(["password"]) == 0
+    assert "6 位" in capsys.readouterr().out
+
+
+def test_password_status_when_empty(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "get", lambda *_a: "")
+    assert run(["password"]) == 1
+    assert "没有存密码" in capsys.readouterr().out
+
+
+def test_password_forget(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import credentials
+
+    dropped: list[tuple[str, str]] = []
+    monkeypatch.setattr(credentials, "delete", lambda a, acc: dropped.append((a, acc)) or True)
+    assert run(["password", "--forget"]) == 0
+    assert dropped == [("huuc", "0814")]
+
+
+def test_password_without_keyring(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *_a: False)
+    assert run(["password", "-p", "p"]) == 3
+
+
+def test_login_remember_saves_password(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth import credentials
+
+    saved: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(credentials, "set", lambda a, acc, p: saved.append((a, acc, p)) or True)
+    fake_portal(monkeypatch)
+    assert run(["login", "-a", "0814", "-p", "pw", "--remember"]) == 0
+    assert saved == [("huuc", "0814", "pw")]
+    assert "钥匙串" in capsys.readouterr().out
+
+
+def test_login_remember_failure_is_not_fatal(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *_a: False)
+    fake_portal(monkeypatch)
+    assert run(["login", "-a", "0814", "-p", "pw", "--remember"]) == 0
+    assert "钥匙串存不进去" in capsys.readouterr().out

@@ -107,3 +107,39 @@ def test_validate_rejects_unknown_operator() -> None:
 
 def test_password_not_in_repr() -> None:
     assert "hunter2" not in repr(Config(adapter="huuc", account="1", password="hunter2"))
+
+
+def test_password_falls_back_to_keyring(isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import credentials
+
+    path = write(isolated, 'adapter = "huuc"\naccount = "123"\n')
+    monkeypatch.setattr(credentials, "get", lambda adapter, account: f"{adapter}:{account} 的密码")
+    assert load(path).password == "huuc:123 的密码"
+
+
+def test_config_password_beats_keyring(isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import credentials
+
+    path = write(isolated, 'adapter = "huuc"\naccount = "123"\npassword = "从文件"\n')
+    monkeypatch.setattr(credentials, "get", lambda *_a: "从钥匙串")
+    assert load(path).password == "从文件"
+
+
+def test_env_password_beats_keyring(isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth import credentials
+
+    path = write(isolated, 'adapter = "huuc"\naccount = "123"\n')
+    monkeypatch.setattr(credentials, "get", lambda *_a: "从钥匙串")
+    monkeypatch.setenv(config_mod.ENV_PASSWORD, "从环境")
+    assert load(path).password == "从环境"
+
+
+def test_keyring_skipped_when_file_has_no_account(
+    isolated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from campus_auth import credentials
+
+    called: list[tuple[str, str]] = []
+    monkeypatch.setattr(credentials, "get", lambda a, acc: called.append((a, acc)) or "")
+    load(write(isolated, 'adapter = "huuc"\n'))
+    assert called == [("huuc", "")]

@@ -10,6 +10,7 @@
     campus-auth watch                断线自动重连
     campus-auth urls                 生成 .url / .desktop 快捷方式
     campus-auth install / uninstall  把 watch 装成登录自启 / 卸掉
+    campus-auth password             密码存进/删出系统钥匙串
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from . import __version__, adapters, net
+from . import __version__, adapters, credentials, net
 from . import install as installer
 from .config import ENV_PASSWORD, Config, find_config_file, load
 from .errors import (
@@ -41,7 +42,7 @@ from .probe import probe, to_json
 from .runner import Context, _host_port, build, require_campus
 
 CONFIG_TEMPLATE = """\
-# campus-auth 配置。密码建议走环境变量 {env}，别提交这一行。
+# campus-auth 配置。密码建议放系统钥匙串（`campus-auth password`），其次环境变量 {env}。
 adapter = "{adapter}"
 account = "你的学号"
 password = ""
@@ -230,7 +231,44 @@ def cmd_login(args: argparse.Namespace) -> int:
             }
         )
     _say("结果: 已在线" if online else "结果: 未确认在线")
+    if online and args.remember:
+        _remember_password(config)
     return EXIT_OK if online else EXIT_REJECTED
+
+
+def _remember_password(config: Config) -> None:
+    if credentials.set(config.adapter, config.account, config.password):
+        _say("已把密码存进系统钥匙串。")
+    else:
+        _say('! 钥匙串存不进去：先 `pip install "campus-auth[keyring]"`。')
+
+
+def cmd_password(args: argparse.Namespace) -> int:
+    config = _config(args)
+    if not config.account:
+        _say("缺账号：用 -a 或写进配置，钥匙串是按「适配层/账号」存的。")
+        return EXIT_CONFIG
+
+    if args.forget:
+        if credentials.delete(config.adapter, config.account):
+            _say(f"已从钥匙串删除 {config.adapter}/{config.account}。")
+            return EXIT_OK
+        _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+        return EXIT_ENV
+
+    if args.password is not None or args.password_stdin:
+        if credentials.set(config.adapter, config.account, config.password):
+            _say(f"已存入钥匙串 {config.adapter}/{config.account}。")
+            return EXIT_OK
+        _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+        return EXIT_ENV
+
+    stored = credentials.get(config.adapter, config.account)
+    if not stored:
+        _say(f"{config.adapter}/{config.account} 没有存密码；给一个（-p 或标准输入）就会存。")
+        return EXIT_REJECTED
+    _say(f"钥匙串里有 {config.adapter}/{config.account} 的密码（{len(stored)} 位）。")
+    return EXIT_OK
 
 
 def _payload_ok(payload: dict) -> bool:
@@ -386,7 +424,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     service = installer.service_for(path)
     _say(f"要装的是: {service.kind} → {service.path}")
     if not config.password:
-        _say("! 没读到密码：自启不继承当前 shell 的环境变量，密码得写进配置文件")
+        _say("! 没读到密码：自启不继承当前 shell 的环境变量，先 `campus-auth password` 或写进配置")
     if args.dry_run:
         _say("")
         _say(service.content.rstrip())
@@ -477,7 +515,9 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("adapters", parents=[common], help="列出内置适配层").set_defaults(
         func=cmd_adapters
     )
-    sub.add_parser("login", parents=[common], help="登录").set_defaults(func=cmd_login)
+    login_p = sub.add_parser("login", parents=[common], help="登录")
+    login_p.add_argument("--remember", action="store_true", help="成功后把密码存进系统钥匙串")
+    login_p.set_defaults(func=cmd_login)
     sub.add_parser("logout", parents=[common], help="注销").set_defaults(func=cmd_logout)
     sub.add_parser("unbind", parents=[common], help="解除 MAC 绑定").set_defaults(func=cmd_unbind)
     sub.add_parser("status", parents=[common], help="查看在线会话").set_defaults(func=cmd_status)
@@ -500,6 +540,10 @@ def _parser() -> argparse.ArgumentParser:
     watch_p.add_argument("--cycles", type=int, help="跑多少轮后退出")
     watch_p.add_argument("--interval", type=float, help="两轮间隔秒数")
     watch_p.set_defaults(func=cmd_watch)
+
+    password_p = sub.add_parser("password", parents=[common], help="把密码存进/删出系统钥匙串")
+    password_p.add_argument("--forget", action="store_true", help="删掉存着的密码")
+    password_p.set_defaults(func=cmd_password)
 
     install_p = sub.add_parser(
         "install", parents=[common], help="把 watch 装成登录自启（计划任务 / systemd / launchd）"

@@ -131,8 +131,8 @@ campus-auth install               # Windows: HKCU\...\Run + 一个 .cmd 包装
 campus-auth uninstall             # 停掉并删干净
 ```
 
-密码不会被代管：自启进程不继承你当前 shell 的环境变量，**密码得写进配置文件**
-（`password = "..."`），install 发现没密码会提醒。日志写在系统的 state 目录
+密码不会被代管：自启进程不继承你当前 shell 的环境变量，**密码得放进钥匙串
+或配置文件**，install 发现两处都没有会提醒。日志写在系统的 state 目录
 （Windows `%LOCALAPPDATA%\campus-auth\watch.log`，其他平台 `~/.local/state/campus-auth/`）。
 
 ## 命令与退出码
@@ -147,6 +147,7 @@ campus-auth uninstall             # 停掉并删干净
 | `check` | 只判定在线与否，结果走退出码 |
 | `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔 |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
+| `password` | 密码存进/删出系统钥匙串（`--forget` 删） |
 | `urls` | 按当前 IP 生成 `.url` / `.desktop` 快捷方式（POST 类只有地址） |
 
 | 退出码 | 含义 |
@@ -167,7 +168,7 @@ campus-auth uninstall             # 停掉并删干净
 ```toml
 adapter = "huuc"       # probe 判出来哪个填哪个：huuc / ruijie / srun
 account = "081456789"
-password = ""          # 留空则读 $CAMPUS_AUTH_PASSWORD
+password = ""          # 留空则读 $CAMPUS_AUTH_PASSWORD，再不行读系统钥匙串
 operator = "none"      # none / cmcc / unicom / dx（仅 Dr.COM 系有运营商后缀）
 base_url = ""          # 锐捷/深澜必填，指到门户页
 verify_tls = false     # 校园门户基本是自签证书
@@ -180,8 +181,18 @@ interval = 120
 配置文件查找顺序：`--config` → `$CAMPUS_AUTH_CONFIG` → `./campus-auth.toml` →
 `%APPDATA%\campus-auth\config.toml` / `~/.config/campus-auth/config.toml`。
 
-**密码别写进仓库。** `CAMPUS_AUTH_PASSWORD` 或 `--password-stdin` 都行；
-`keyring` 集成在路线图里。
+**密码别写进仓库。** 优先级从高到低：`$CAMPUS_AUTH_PASSWORD` → 配置文件 → 系统钥匙串。
+推荐钥匙串（Windows 凭据管理器 / macOS Keychain / Linux Secret Service）：
+
+```bash
+pip install "campus-auth[keyring]"   # 只装这个功能
+campus-auth password                 # 看有没有存
+campus-auth password -p '...'        # 存（也可以 echo -n '...' | campus-auth password）
+campus-auth password --forget        # 删
+campus-auth login --remember         # 或者登录成功时顺手存
+```
+
+没装 `keyring`、或后端不可用（headless Linux 常见）时全部自动退回配置文件/环境变量。
 
 锐捷注销要用的 `userIndex` 会缓存到配置目录的 `state.json`（不含密码，12 小时过期），
 `$CAMPUS_AUTH_STATE` 可以把路径换掉。
@@ -243,6 +254,7 @@ campus-auth status --adapter ./my_school.py:ADAPTER
   有的版本还要求带密码，`unbind` 时给个 `-p` 就会带上。
 - `install` 在 Windows 上写 `HKCU\...\Run`；被组策略禁掉自启的机器会装不上，
   失败时照 `--dry-run` 打印的那行命令手动加。
+- 钥匙串要靠 `keyring` 和可用的后端；headless Linux 上常常没有，会给提示并退回配置文件。
 - 深澜的 `unbind` 还没实现：eportal 那套通用解绑路径在深澜门户上只会取回登录页 HTML，
   命令会以 4 退出。
 - 锐捷的 `logout` 必须是本机 `login` 过之后的 12 小时内、且 IP 没变 —— `userIndex` 缓存在

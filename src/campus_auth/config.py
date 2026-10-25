@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from . import credentials
 from .errors import ConfigError
 
 ENV_PASSWORD = "CAMPUS_AUTH_PASSWORD"
@@ -164,6 +165,9 @@ def load(
 
     if os.environ.get(ENV_PASSWORD):
         config.password = os.environ[ENV_PASSWORD]
+    elif not config.password:
+        # 钥匙串是最后一档：环境变量 > 配置文件 > keyring
+        config.password = credentials.get(config.adapter, config.account)
 
     for key, value in (overrides or {}).items():
         if value is None:

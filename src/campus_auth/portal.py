@@ -10,6 +10,8 @@ TLS 1.0 + SHA1（所以要把 SECLEVEL 降到 0）。
 from __future__ import annotations
 
 import contextlib
+import datetime
+import email.utils
 import http.cookiejar
 import json
 import random
@@ -25,6 +27,28 @@ from .adapters.base import Adapter, LoginResult, Request
 from .errors import TransportError
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth"
+
+
+def _retry_after(value: str | None, fallback: float) -> float:
+    """解析 `Retry-After`：秒数或 HTTP 日期（RFC 9110 两种都允许）。
+
+    解析不了就用 fallback；结果夹在 0.5～60 秒，别被服务端写的荒唐值拖住。
+    """
+    delay: float | None = None
+    if value:
+        try:
+            delay = float(value.strip())
+        except ValueError:
+            try:
+                when = email.utils.parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                when = None
+            if when is not None:
+                now = datetime.datetime.now(when.tzinfo or None)
+                delay = (when - now).total_seconds()
+    if delay is None:
+        return fallback
+    return min(60.0, max(0.5, delay))
 
 
 def _ssl_context(verify: bool) -> ssl.SSLContext:
@@ -154,7 +178,7 @@ class Portal:
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", "replace")
                 if exc.code in (429, 503):
-                    delay = float(exc.headers.get("Retry-After") or 0) or 2.0 * (attempt + 1)
+                    delay = _retry_after(exc.headers.get("Retry-After"), 2.0 * (attempt + 1))
                     if attempt < self.retries:
                         time.sleep(delay)
                         continue

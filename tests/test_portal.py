@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import datetime
+import email.message
+import email.utils
+import io
 import urllib.error
 
 import pytest
@@ -168,8 +172,11 @@ class FakeResponse:
     def __init__(self, body: str) -> None:
         self.body = body.encode()
 
-    def read(self) -> bytes:
+    def read(self, _limit: int | None = None) -> bytes:
         return self.body
+
+    def close(self) -> None:  # HTTPError 会当它是文件对象去 close
+        return None
 
     def __enter__(self) -> FakeResponse:
         return self
@@ -209,3 +216,70 @@ def test_retry_delays_capped() -> None:
     delays = list(iter_retry_delays(10, base=1, cap=8))
     assert delays == sorted(delays)
     assert max(delays) <= 8
+
+
+def http_error(code: int, retry_after: str | None) -> urllib.error.HTTPError:
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("http://x/p", code, "boom", headers, io.BytesIO(b'{"ok":1}'))
+
+
+def opener_from(monkeypatch: pytest.MonkeyPatch, portal: Portal, seq: list) -> None:
+    """按顺序回放响应；异常对象就抛出来。"""
+
+    def fake_open(*_a, **_k):
+        item = seq.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(portal._opener, "open", fake_open)
+
+
+def test_retry_after_seconds_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    seq = [http_error(429, "1"), FakeResponse('{"result":1}')]
+
+    monkeypatch.setattr("time.sleep", slept.append)
+    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
+    opener_from(monkeypatch, portal, seq)
+    assert portal.request(Request("/p")) == {"result": 1}
+    assert slept == [pytest.approx(1.0)]
+
+
+def test_retry_after_http_date_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RFC 也允许日期格式；以前 float() 直接吃不下，会抛 ValueError 变成退出码 70。"""
+    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=3)
+    stamp = email.utils.format_datetime(when)
+    slept: list[float] = []
+    seq = [http_error(503, stamp), FakeResponse('{"result":1}')]
+
+    monkeypatch.setattr("time.sleep", slept.append)
+    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
+    opener_from(monkeypatch, portal, seq)
+    assert portal.request(Request("/p")) == {"result": 1}
+    assert len(slept) == 1
+    assert 1.5 < slept[0] <= 4.0
+
+
+def test_retry_after_garbage_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    seq = [http_error(429, "不久之后"), FakeResponse('{"result":1}')]
+
+    monkeypatch.setattr("time.sleep", slept.append)
+    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
+    opener_from(monkeypatch, portal, seq)
+    portal.request(Request("/p"))
+    assert slept == [pytest.approx(2.0)]
+
+
+def test_retry_after_is_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    seq = [http_error(429, "9999"), FakeResponse('{"result":1}')]
+
+    monkeypatch.setattr("time.sleep", slept.append)
+    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
+    opener_from(monkeypatch, portal, seq)
+    portal.request(Request("/p"))
+    assert slept == [pytest.approx(60.0)]

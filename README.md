@@ -129,7 +129,7 @@ campus-auth login --adapter srun --url http://10.20.30.1/
 | `probe` | 探测门户类型，不需要账号（`--url` 给地址） |
 | `init` | 生成配置模板（`--force` 覆盖） |
 | `adapters` | 列出内置适配层与验证状态 |
-| `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
+| `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定（深澜暂不支持 `unbind`） |
 | `status` | 列出在线会话，`--json` 给机器读 |
 | `check` | 只判定在线与否，结果走退出码 |
 | `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔 |
@@ -169,6 +169,9 @@ interval = 120
 **密码别写进仓库。** `CAMPUS_AUTH_PASSWORD` 或 `--password-stdin` 都行；
 `keyring` 集成在路线图里。
 
+锐捷注销要用的 `userIndex` 会缓存到配置目录的 `state.json`（不含密码，12 小时过期），
+`$CAMPUS_AUTH_STATE` 可以把路径换掉。
+
 ## 内置适配层
 
 | 名字 | 门户 | 状态 | 需要 |
@@ -201,7 +204,9 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 - 成败一律以 `online_list` 是否出现自己 IP 为准，别信返回的 `msg`
 
 **锐捷**：`InterFace.do` 走 POST 表单，`queryString` 取自 204 劫持页 URL 并二次编码，
-在线与否看 `generate_204` 是否 204。
+在线与否看 `generate_204` 是否 204。注销、解绑是同一个 `InterFace.do`，把 `method` 换成
+`logout` / `unbind`：注销只认登录时拿到的 `userIndex`（会缓存到 `state.json`，见上节），
+解绑认学号，跨进程也能跑。
 
 **深澜**：`get_challenge` 取一次性 challenge，`password` 传 `{MD5}` + HMAC-MD5，
 `info` 传 `{SRBX1}` + XXTEA(json)，再用 sha1 对整串签名成 `chksum`，
@@ -214,7 +219,13 @@ campus-auth status --adapter ./my_school.py:ADAPTER
 
 - 只覆盖网页认证门户。走 802.1X 或专用客户端加密的学校用不了 —— 先跑 `probe`，别硬配。
 - `ruijie` / `srun` **未实机验证**，各校版本差异大（深澜还有 `srun_bx2`），可能需要改适配层。
-- 锐捷的 `unbind`（解绑）没有对应接口，用的还是 eportal 通用路径，大概率 404。
+- 锐捷的 `unbind` 打的是 `InterFace.do?method=unbind`，只在假门户上验过：各校版本叫别的 method
+  时会回 `method 不对`，改 [`ruijie.py`](src/campus_auth/adapters/ruijie.py) 的 `UNBIND_METHOD` 即可。
+  有的版本还要求带密码，`unbind` 时给个 `-p` 就会带上。
+- 深澜的 `unbind` 还没实现：eportal 那套通用解绑路径在深澜门户上只会取回登录页 HTML，
+  命令会以 4 退出。
+- 锐捷的 `logout` 必须是本机 `login` 过之后的 12 小时内、且 IP 没变 —— `userIndex` 缓存在
+  `state.json`，丢了就只能等门户自己超时，或者用 `unbind` 解掉绑定再登。
 - POST 类适配层（锐捷）的 `urls` 快捷方式只带地址、没有表单体，点开会是错误页 —— 用 `login`。
 - `probe` 的指纹表是判断"哪一家"，不是抓包级证据；判成"证据不全"时仍需人工核实。
 - 应答里的运营商错误码只整理了城建遇到的四种，别的学校会落到通用提示。

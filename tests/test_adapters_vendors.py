@@ -5,6 +5,7 @@ import hmac
 
 import pytest
 
+from campus_auth import state
 from campus_auth.adapters.ruijie import ADAPTER as RUIJIE
 from campus_auth.adapters.srun import ADAPTER as SRUN
 from campus_auth.crypto_srun import sha1_hex, srun_b64, xxtea
@@ -16,6 +17,7 @@ CAPTIVE = (
     "<html><script>top.self.location.href='http://1.2.3.4/eportal/index.jsp"
     "?wlanuserip=10.1.2.3&wlanacname=AC1&service=cmcc&t=wireless-v2'</script></html>"
 )
+PORTAL_PAGE = '<html><script src="/eportal/portal/js/index_1.js"></script></html>'
 
 
 class FakePortal:
@@ -76,6 +78,34 @@ def test_ruijie_uses_given_portal_page() -> None:
     assert portal.calls == []  # 不用再取劫持页
 
 
+def test_ruijie_offline_fallback_keeps_ip_in_query() -> None:
+    """已在线时劫持页是空 204，回退 index.jsp 必须把 IP 带上，否则 queryString 为空。"""
+    portal = FakePortal(
+        "http://connect.rom.miui.com/generate_204",
+        {
+            "http://connect.rom.miui.com/generate_204": (204, ""),
+            "http://connect.rom.miui.com/eportal/index.jsp?wlanuserip=10.1.2.3": (200, PORTAL_PAGE),
+        },
+    )
+    ctx = RUIJIE.discover(portal, "u")
+    assert ctx["query_string"] == "wlanuserip%253D10.1.2.3"
+    assert ctx["unbind_url"] == "http://connect.rom.miui.com/eportal/InterFace.do?method=unbind"
+
+
+def test_ruijie_fallback_retries_without_query() -> None:
+    """不认 wlanuserip 的版本：带参 404，就退回裸 index.jsp。"""
+    portal = FakePortal(
+        "http://connect.rom.miui.com/generate_204",
+        {
+            "http://connect.rom.miui.com/generate_204": (204, ""),
+            "http://connect.rom.miui.com/eportal/index.jsp": (200, PORTAL_PAGE),
+        },
+    )
+    ctx = RUIJIE.discover(portal, "u")
+    assert ctx["referer"] == "http://connect.rom.miui.com/eportal/index.jsp"
+    assert ctx["query_string"] == ""
+
+
 def test_ruijie_login_is_post_with_expected_fields() -> None:
     portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
     portal.ctx = RUIJIE.discover(portal, portal.account)
@@ -123,6 +153,75 @@ def test_ruijie_logout_is_post_and_uses_user_index() -> None:
     assert req.method == "POST"
     assert "method=logout" in req.path
     assert req.body["userIndex"] == "u-9"
+
+
+def test_ruijie_logout_reuses_index_from_previous_process() -> None:
+    """`logout` 和 `login` 是两条命令：本进程没登录过就用缓存的那个 userIndex。"""
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    state.save_user_index("ruijie", portal.account, portal.ip, "idx7")
+    assert RUIJIE.logout_request(portal).body["userIndex"] == "idx7"
+
+
+def test_ruijie_after_login_persists_index() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    RUIJIE.after_login(portal, {"result": "success", "userIndex": "u-9"})
+    assert state.load_user_index("ruijie", portal.account, portal.ip) == "u-9"
+
+
+def test_ruijie_successful_logout_drops_index() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    RUIJIE.after_login(portal, {"result": "success", "userIndex": "u-9"})
+    RUIJIE.after_logout(portal, {"result": "success"})
+    assert state.load_user_index("ruijie", portal.account, portal.ip) == ""
+
+
+def test_ruijie_failed_logout_keeps_index() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    RUIJIE.after_login(portal, {"result": "success", "userIndex": "u-9"})
+    RUIJIE.after_logout(portal, {"result": "fail", "message": "未登录"})
+    assert state.load_user_index("ruijie", portal.account, portal.ip) == "u-9"
+
+
+def test_ruijie_login_without_user_index_saves_nothing() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    RUIJIE.after_login(portal, {"result": "success"})
+    assert state.load_user_index("ruijie", portal.account, portal.ip) == ""
+
+
+def test_ruijie_unbind_posts_user_id_to_interface() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    req = RUIJIE.unbind_request(portal)
+    assert req.method == "POST"
+    assert req.path == "http://1.2.3.4/eportal/InterFace.do?method=unbind"
+    assert req.body["userId"] == "20240001"
+    # queryString 跟登录一样是二次编码过的，服务端只解一层
+    assert req.body["queryString"] == "service%253Dx"
+    assert req.body["password"] == "secret"
+    assert "userIndex" not in req.body
+    assert req.headers["Referer"].endswith("service=x")
+
+
+def test_ruijie_unbind_carries_user_index_when_known() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    portal.ctx = RUIJIE.discover(portal, portal.account)
+    RUIJIE.after_login(portal, {"result": "success", "userIndex": "u-9"})
+    portal.password = ""  # 没配密码也照样能解绑
+    req = RUIJIE.unbind_request(portal)
+    assert req.body["userIndex"] == "u-9"
+    assert "password" not in req.body
+
+
+def test_ruijie_unbind_without_discovery_uses_portal_origin() -> None:
+    portal = FakePortal("http://1.2.3.4/eportal/index.jsp?service=x")
+    req = RUIJIE.unbind_request(portal)
+    assert req.path == "http://1.2.3.4/eportal/InterFace.do?method=unbind"
+    assert req.body["queryString"] == ""
 
 
 def test_ruijie_online_check_reads_204() -> None:

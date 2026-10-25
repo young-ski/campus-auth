@@ -235,6 +235,9 @@ class Adapter:
     def after_login(self, portal: object, payload: Mapping[str, object]) -> None:
         """登录成功后收尾（比如存下 userIndex）；默认什么都不做。"""
 
+    def after_logout(self, portal: object, payload: Mapping[str, object]) -> None:
+        """注销后的收尾（比如丢掉缓存的 userIndex）；默认什么都不做。"""
+
     def zone_hint(self, ip: str, ssid: str | None) -> str:
         return ""
 

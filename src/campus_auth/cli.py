@@ -238,6 +238,19 @@ def _payload_ok(payload: dict) -> bool:
     return str(payload.get("error") or "").lower() == "ok"
 
 
+def _hint_line(ctx, ok: bool, msg: object) -> None:
+    """失败时请适配层把含糊报错翻成人话。
+
+    适配层的兜底提示只是把原文再抄一遍，已经在上面打过了 —— 那就别重复。
+    """
+    if ok:
+        return
+    text = str(msg or "")
+    hint = ctx.adapter.hint_for(None, text)
+    if hint and (not text or text not in hint):
+        _say(f"! {hint}")
+
+
 def cmd_logout(args: argparse.Namespace) -> int:
     config = _config(args)
     ctx = build(config, need_password=adapters.get_adapter(config.adapter).logout_needs_password)
@@ -251,6 +264,7 @@ def cmd_logout(args: argparse.Namespace) -> int:
     )
     _say(f"服务端: {msg or '(无消息)'}")
     ok = _payload_ok(payload)
+    _hint_line(ctx, ok, msg)
     if args.json:
         _dump({"ok": ok, "msg": msg})
     return EXIT_OK if ok else EXIT_REJECTED
@@ -264,6 +278,7 @@ def cmd_unbind(args: argparse.Namespace) -> int:
     message = payload.get("msg") or payload.get("message") or payload.get("error")
     _say(f"服务端: {message or '(无消息)'}  MAC {ctx.mac}")
     ok = _payload_ok(payload)
+    _hint_line(ctx, ok, message)
     if args.json:
         _dump({"ok": ok, "msg": message})
     return EXIT_OK if ok else EXIT_REJECTED

@@ -181,3 +181,78 @@ def test_logout_and_unbind(campus: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     fake_portal(monkeypatch)
     assert run(["logout"]) == 0
     assert run(["unbind", "-a", "1", "-p", "p"]) == 0
+
+
+def test_unbind_ruijie_goes_to_interface(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    # 直接给 index.jsp，解绑时才不用真去撞 204 劫持页
+    config = campus / "ruijie.toml"
+    config.write_text(
+        'adapter = "ruijie"\naccount = "20240001"\n'
+        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def fake_request(self: Portal, request):
+        seen["path"] = request.path
+        seen["body"] = dict(request.body)
+        return {"result": "success", "message": "解绑成功"}
+
+    monkeypatch.setattr(Portal, "request", fake_request)
+    assert run(["unbind", "--config", str(config)]) == 0
+    assert str(seen["path"]).endswith("InterFace.do?method=unbind")
+    assert seen["body"]["userId"] == "20240001"
+    assert "解绑成功" in capsys.readouterr().out
+
+
+def test_logout_ruijie_in_a_later_process(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """login 和 logout 是两次独立运行：userIndex 只能靠落盘传过去。"""
+    config = campus / "ruijie.toml"
+    config.write_text(
+        'adapter = "ruijie"\naccount = "20240001"\n'
+        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
+        encoding="utf-8",
+    )
+    server = {"index": "", "seq": 0}
+
+    def fake_request(self: Portal, request):
+        if "method=login" in request.path:
+            server["seq"] += 1
+            server["index"] = f"idx{server['seq']}"
+            return {"result": "success", "userIndex": server["index"]}
+        if "method=logout" in request.path:
+            if request.body["userIndex"] != server["index"]:
+                return {"result": "fail", "message": "未登录"}
+            return {"result": "success", "message": "注销成功"}
+        return {}
+
+    monkeypatch.setattr(Portal, "request", fake_request)
+    # 别去撞真 204：登录过程中和 login 之后都会问一次在线与否
+    monkeypatch.setattr(Portal, "raw", lambda *a, **k: ((204 if server["index"] else 200), ""))
+
+    assert run(["login", "--config", str(config), "-p", "pw"]) == 0
+    assert run(["logout", "--config", str(config)]) == 0
+    # 缓存注销成功后就被丢掉了，再注销一次只能拿空 userIndex 去撞
+    assert run(["logout", "--config", str(config)]) == 1
+    assert "userIndex" in capsys.readouterr().out
+
+
+def test_logout_hint_does_not_repeat_the_message(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    config = campus / "ruijie.toml"
+    config.write_text(
+        'adapter = "ruijie"\naccount = "20240001"\n'
+        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        Portal, "request", lambda self, request: {"result": "fail", "message": "没收录的新错"}
+    )
+    assert run(["logout", "--config", str(config)]) == 1
+    out = capsys.readouterr().out
+    assert out.count("没收录的新错") == 1

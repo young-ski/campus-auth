@@ -53,7 +53,7 @@ SRUN_PAGE = """<!doctype html><html><body><p>深澜认证系统</p>
 <script>var ac_id='%(ac_id)s';</script>
 <form action="/cgi-bin/srun_portal"><input name="srun_bx1"></form></body></html>"""
 
-STATE = {"online": False}
+STATE = {"online": False, "seq": 0, "user_index": ""}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -121,7 +121,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/eportal/portal/logout":
             STATE["online"] = False
             return self._json({"result": 1, "ret_code": 0, "msg": "注销成功"})
-        if path == "/eportal/portal/mac/unbind":
+        # Dr.COM 走这个通用路径；锐捷的解绑在 InterFace.do，深澜还没实现，
+        # 所以后两者落到下面的 _serve_page，跟真门户一样回 HTML
+        if path == "/eportal/portal/mac/unbind" and self.style == "drcom":
             return self._json({"result": 1, "ret_code": 0, "msg": "解绑成功"})
 
         if path == "/cgi-bin/get_challenge":
@@ -158,10 +160,23 @@ class Handler(BaseHTTPRequestHandler):
             if not form.get("queryString", [""])[0]:
                 return self._json({"result": "fail", "message": "非法的用户组"})
             STATE["online"] = True
-            return self._json({"result": "success", "userIndex": "abc123"})
+            STATE["seq"] += 1
+            STATE["user_index"] = f"idx{STATE['seq']}"
+            return self._json({"result": "success", "userIndex": STATE["user_index"]})
         if split.path == "/eportal/InterFace.do" and query.get("method") == ["logout"]:
+            # 注销只认登录时发的 userIndex，靠开户进程里记着没用（两条命令两个进程）
+            if form.get("userIndex", [""])[0] != STATE["user_index"]:
+                return self._json({"result": "fail", "message": "未登录"})
             STATE["online"] = False
             return self._json({"result": "success", "message": "注销成功"})
+        if split.path == "/eportal/InterFace.do" and query.get("method") == ["unbind"]:
+            # 解绑不要求在线，但要学号证明解的是谁，queryString 缺了也不收
+            if form.get("userId", [""])[0] != ACCOUNT:
+                return self._json({"result": "fail", "message": "用户不存在"})
+            if not form.get("queryString", [""])[0]:
+                return self._json({"result": "fail", "message": "非法的用户组"})
+            STATE["online"] = False
+            return self._json({"result": "success", "message": "解绑成功"})
         return self._send(404, "not found")
 
     # ---------- 深澜 ----------

@@ -245,7 +245,9 @@ class Portal:
     def logout(self) -> dict[str, object]:
         if not self.ctx:
             self.prepare()
-        return self.request(self.adapter.logout_request(self))
+        payload = self.request(self.adapter.logout_request(self))
+        self.adapter.after_logout(self, payload)
+        return payload
 
     def unbind(self) -> dict[str, object]:
         if not self.ctx:

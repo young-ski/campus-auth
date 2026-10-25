@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "campus-auth"
-version = "0.9.7"
+version = "0.9.8"
 description = "Dr.COM / eportal 校园网门户认证客户端，适配层按学校可插拔"
 readme = "README.md"
 requires-python = ">=3.11"

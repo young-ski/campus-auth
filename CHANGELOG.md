@@ -26,6 +26,7 @@
 - `probe` 权重按"哪家独有"重排，判定要过门槛并领先 10 分；采样补
   `/eportal/index.jsp`、`InterFace.do`，并跟随劫持跳转；四条探针并发，慢网不再按 4 倍超时等
 - 适配层签名改用 `PortalLike` 协议，去掉满地的 `type: ignore`
+- `cli.py` 拆成入口 + `commands.py`，593 行的单文件走到头了
 - 假门户补 `--variant`，锐捷解绑/深澜 `info` 都会真校验
 
 ### 移除

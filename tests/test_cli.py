@@ -397,12 +397,12 @@ def test_unbind_transport_error_prints_hint(
 
 
 def test_password_prompts_on_tty(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from campus_auth import cli, credentials
+    from campus_auth import cli, commands, credentials
 
     saved: list[str] = []
     monkeypatch.setattr(credentials, "set", lambda a, acc, p: saved.append(p) or True)
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
-    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "typed")
+    monkeypatch.setattr(commands.getpass, "getpass", lambda _prompt: "typed")
     assert run(["password"]) == 0
     assert saved == ["typed"]
 

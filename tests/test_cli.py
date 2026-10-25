@@ -374,3 +374,23 @@ def test_watch_log_still_prints(campus: Path, monkeypatch: pytest.MonkeyPatch, c
     fake_portal(monkeypatch)
     assert run(["watch", "--once", "--log", "w.log"]) == 0
     assert "已重新登录" in capsys.readouterr().out
+
+
+def test_unbind_transport_error_prints_hint(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """深澜回 HTML 时别再甩 200 字符原文，给一句人话。"""
+    from campus_auth.errors import TransportError
+
+    config = campus / "srun.toml"
+    config.write_text('adapter = "srun"\naccount = "20240001"\n', encoding="utf-8")
+
+    def boom(self: Portal, request):
+        raise TransportError("响应里没有可解析的 JSON 对象: '<!doctype html>...'")
+
+    monkeypatch.setattr(Portal, "request", boom)
+    monkeypatch.setattr(Portal, "raw", lambda *a, **k: (200, "<script>var ac_id='12';</script>"))
+    assert run(["unbind", "--config", str(config)]) == 4
+    out = capsys.readouterr().out
+    assert "解绑失败" in out
+    assert "没有解绑接口" in out

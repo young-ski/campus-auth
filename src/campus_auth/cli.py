@@ -33,9 +33,11 @@ from .errors import (
     EXIT_ENV,
     EXIT_OK,
     EXIT_REJECTED,
+    EXIT_TRANSPORT,
     CampusAuthError,
     ConfigError,
     EnvironmentError_,
+    TransportError,
 )
 from .keepalive import Cycle, watch
 from .logfile import RotatingLog, Tee
@@ -315,7 +317,17 @@ def cmd_unbind(args: argparse.Namespace) -> int:
     config = _config(args)
     ctx = build(config, need_password=False)  # 解绑只用学号和 MAC
     require_campus(ctx)
-    payload = ctx.portal.unbind()
+    try:
+        payload = ctx.portal.unbind()
+    except TransportError as exc:
+        # 深澜没有解绑接口，回的是 HTML，解析不出 JSON 就落到这里
+        _say(f"解绑失败: {str(exc).splitlines()[0]}")
+        hint = ctx.adapter.hint_for(None, str(exc))
+        if hint:
+            _say(f"! {hint}")
+        if args.json:
+            _dump({"ok": False, "error": str(exc)})
+        return EXIT_TRANSPORT
     message = payload.get("msg") or payload.get("message") or payload.get("error")
     _say(f"服务端: {message or '(无消息)'}  MAC {ctx.mac}")
     ok = _payload_ok(payload)
@@ -443,6 +455,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             _say(f"$ {' '.join(argv)}")
         return EXIT_OK
 
+    installer.check_python(sys.executable)
     installer.install(service)
     _say("已安装。")
     for note in service.notes:

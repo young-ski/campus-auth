@@ -234,6 +234,19 @@ def install(service: Service, *, dry_run: bool = False, run: Runner = _default_r
         run(argv)
 
 
+def check_python(python: str, run: Runner = _default_runner) -> None:
+    """装之前先确认这个解释器能 import 到 campus_auth。
+
+    自启跑的是装的时候那个 python；它要是系统 python 或 pyz，装完才发现跑不起来。
+    """
+    try:
+        run([python, "-c", "import campus_auth"])
+    except ConfigError as exc:
+        raise ConfigError(
+            f"{python} 里 import 不到 campus_auth：先 `pip install .` 或换它的 python 再装"
+        ) from exc
+
+
 def uninstall(service: Service, *, dry_run: bool = False, run: Runner = _default_runner) -> None:
     """先停后删；文件不在也不算错。"""
     if dry_run:
@@ -243,4 +256,4 @@ def uninstall(service: Service, *, dry_run: bool = False, run: Runner = _default
     service.path.unlink(missing_ok=True)
 
 
-__all__ = ["Service", "install", "service_for", "uninstall"]
+__all__ = ["Service", "check_python", "install", "service_for", "uninstall"]

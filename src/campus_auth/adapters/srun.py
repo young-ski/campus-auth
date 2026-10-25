@@ -44,6 +44,8 @@ HINTS = {
     "ip_already_online": "这个 IP 已经有会话了，先注销。",
     "ac_id_error": "ac_id 不对：用 --url 指向真实的登录页，别只给域名。",
     "challenge_expired": "challenge 过期了，重跑一次即可。",
+    # 解绑打到 eportal 通用路径上只会拿回登录页 HTML
+    "没有可解析的 JSON": "深澜没有解绑接口：改用 logout；只是换了设备就去门户页面手动解绑。",
 }
 
 

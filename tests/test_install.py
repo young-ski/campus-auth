@@ -107,3 +107,17 @@ def test_uninstall_stops_then_removes(tmp_path: Path) -> None:
 def test_uninstall_without_file_is_ok(tmp_path: Path) -> None:
     service = install.service_for(tmp_path / "c.toml", platform="linux")
     install.uninstall(service, run=lambda _argv: None)  # 不该抛
+
+
+def test_check_python_ok(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    install.check_python(str(tmp_path / "python.exe"), run=calls.append)
+    assert calls == [[str(tmp_path / "python.exe"), "-c", "import campus_auth"]]
+
+
+def test_check_python_failure_is_actionable(tmp_path: Path) -> None:
+    def fail(_argv: list[str]) -> None:
+        raise ConfigError("找不到命令")
+
+    with pytest.raises(ConfigError, match="import 不到 campus_auth"):
+        install.check_python("/usr/bin/python3", run=fail)

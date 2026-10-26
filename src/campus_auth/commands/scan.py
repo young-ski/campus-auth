@@ -14,7 +14,12 @@ from ._common import _err, _say
 def cmd_probe(args: argparse.Namespace) -> int:
     target = args.url or _adapter_base_url(args)
     try:
-        analysis, used = probe(target, timeout=args.timeout or 8.0, verify=args.verify_tls)
+        analysis, used = probe(
+            target,
+            timeout=args.timeout or 8.0,
+            verify=args.verify_tls,
+            follow=not args.no_follow,
+        )
     except CampusAuthError as exc:
         _err(str(exc))
         _say("")

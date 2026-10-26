@@ -516,3 +516,32 @@ def test_status_json_keeps_any_online_for_old_scripts(
     payload = json.loads(capsys.readouterr().out)
     assert payload["online"] is False
     assert payload["any_online"] is True
+
+
+# ---------- 帮助信息 ----------
+
+
+def test_probe_help_does_not_show_password_flags(capsys) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["probe", "--help"])
+    out = capsys.readouterr().out
+    assert "--password-stdin" not in out
+    assert "--url" in out
+
+
+def test_status_help_hides_password_flags(capsys) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["status", "--help"])
+    out = capsys.readouterr().out
+    assert "-p, --password" not in out
+    assert "-a, --account" in out
+
+
+def test_every_subcommand_has_a_description() -> None:
+    import argparse
+
+    parser = cli._parser()
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    for name, child in sub.choices.items():
+        assert child.description, f"{name} 缺 description"
+        assert len(child.description) > 10

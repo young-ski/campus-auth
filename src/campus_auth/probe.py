@@ -243,6 +243,7 @@ def collect(
     timeout: float = 8.0,
     verify: bool = False,
     transport: Transport | None = None,
+    follow: bool = True,
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
 
@@ -288,8 +289,9 @@ def collect(
                     except TransportError:
                         continue
 
-    # 劫持页只给一句 location.href，指纹全在它指向的门户页上
-    captive = _CAPTIVE.search(samples.get("body", ""))
+    # 劫持页只给一句 location.href，指纹全在它指向的门户页上。
+    # 跟不跟由调用方决定（--no-follow），一跳为止。
+    captive = _CAPTIVE.search(samples.get("body", "")) if follow else None
     if captive:
         page = _absorb(captive.group(1), fetch, js_chunks)
         if page:
@@ -309,8 +311,11 @@ def probe(
     timeout: float = 8.0,
     verify: bool = False,
     transport: Transport | None = None,
+    follow: bool = True,
 ) -> tuple[Analysis, str]:
-    samples, server, port = collect(base_url, timeout=timeout, verify=verify, transport=transport)
+    samples, server, port = collect(
+        base_url, timeout=timeout, verify=verify, transport=transport, follow=follow
+    )
     return analyze(samples, server=server, port=port), base_url
 
 

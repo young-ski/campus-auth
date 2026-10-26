@@ -205,3 +205,13 @@ def test_collect_asks_inter_face_and_index() -> None:
         probe.collect("http://10.0.0.1", transport=transport)
     assert any("InterFace.do" in url for url in transport.calls)
     assert any("index.jsp" in url for url in transport.calls)
+
+
+def test_no_follow_skips_captive_hop() -> None:
+    """--no-follow 时不跟劫持页给的地址，只留跳转页本身。"""
+    transport = DictTransport(
+        {"http://10.0.0.1/": "<script>location.href='http://x/eportal/'</script>"}
+    )
+    samples, _server, _port = probe.collect("http://10.0.0.1", transport=transport, follow=False)
+    assert "location.href" in samples["body"]
+    assert not any(url == "http://x/eportal/" for url in transport.calls)

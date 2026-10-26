@@ -48,25 +48,29 @@ def _zone_line(ctx: Context) -> None:
 
 
 def _config(args: argparse.Namespace) -> Config:
+    """把命令行覆盖项并进配置。各命令挂的参数不同，缺的就是没给。"""
     overrides = {
-        "adapter": args.adapter,
-        "account": args.account,
-        "operator": args.operator,
-        "mac": args.mac,
-        "ip": args.ip,
-        "base_url": args.url,
-        "timeout": args.timeout,
-        "retries": args.retries,
+        name: getattr(args, field, None)
+        for name, field in (
+            ("adapter", "adapter"),
+            ("account", "account"),
+            ("operator", "operator"),
+            ("mac", "mac"),
+            ("ip", "ip"),
+            ("base_url", "url"),
+            ("timeout", "timeout"),
+            ("retries", "retries"),
+        )
     }
-    if args.password_stdin:
+    if getattr(args, "password_stdin", False):
         overrides["password"] = sys.stdin.readline().rstrip("\r\n")
-    elif args.password is not None:
+    elif getattr(args, "password", None) is not None:
         overrides["password"] = args.password
-    if args.verify_tls:
+    if getattr(args, "verify_tls", False):
         overrides["verify_tls"] = True
-    if args.show_secrets:
+    if getattr(args, "show_secrets", False):
         overrides["mask_urls"] = False
-    return load(args.config, overrides)
+    return load(getattr(args, "config", None), overrides)
 
 
 def _prepare(args: argparse.Namespace, config: Config) -> Context:

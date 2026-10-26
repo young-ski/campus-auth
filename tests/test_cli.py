@@ -533,8 +533,9 @@ def test_status_help_hides_password_flags(capsys) -> None:
     with pytest.raises(SystemExit):
         cli.main(["status", "--help"])
     out = capsys.readouterr().out
-    assert "-p, --password" not in out
-    assert "-a, --account" in out
+    # argparse 的选项渲染各版本不同（3.11 是 "-a 学号, --account 学号"），只认长名
+    assert "--password" not in out
+    assert "--account" in out
 
 
 def test_every_subcommand_has_a_description() -> None:

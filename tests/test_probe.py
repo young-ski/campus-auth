@@ -138,7 +138,7 @@ def test_probe_success(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) ->
     assert cli.main(["probe", "--url", "http://10.0.0.1:8080"]) == 0
     out = capsys.readouterr().out
     assert "Dr.COM" in out
-    assert "huuc" in out
+    assert "generic" in out
 
 
 def test_probe_ruijie(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:

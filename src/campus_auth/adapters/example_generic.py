@@ -1,28 +1,37 @@
 """通用 eportal 适配层模板 —— 抄这份改成你的学校。
 
-适用面：走 `/eportal/portal/login` 的 Dr.COM 门户，**且不校验加密**（`encrypt=1`
-但没有异或层，或服务端宽松）。真机一跑就报错的话，按下面顺序核对：
+**先跑 `campus-auth probe --url <门户地址>` 确认是 Dr.COM**，判成别的就别往下写。
 
-1. 浏览器 F12 → Network，点一次登录，看实际请求的 URL 和参数名。
-   参数名不同就覆盖 `login_params()`。
-2. 参数值全是 `%xx` 十六进制 → 改用 `key_style="ip-xor"`，并在
-   `encoder()` 里换成你学校的密钥算法（常见是网卡 MAC 或固定盐）。
-3. 响应不是 JSON → 覆盖 `interpret_login()`。
-4. 路径不同（有的在 `/eportal/portal/login`，有的带随机前缀）→ 改路径字段。
+改的时候按这个顺序核对（F12 → Network，作为普通用户点一次登录）：
+
+1. 参数名不同 → 覆盖 `account_params()` / `identity_params()` 或整个 `login_request()`。
+2. 参数值是 `%xx` 十六进制 → `key_style="ip-xor"`，并把密钥算法写进 `encoder()` 的
+   返回函数（常见是 MAC 或固定盐，密钥一致才有用）。
+3. 响应不是 JSON → 覆盖 `interpret_login()` 和 `hint_for()`。
+4. 路径不同 → 改 `login_path` / `logout_path` 这些字段。
+
+改完在 `adapters/__init__.py` 的 `BUILTIN` 登记，再跑
+`campus-auth status --adapter <代号>` 和一次真机 `login`。
 """
 
 from __future__ import annotations
 
 from .base import Adapter
 
-ADAPTER = Adapter(
-    name="generic",
-    school="未具名学校（模板）",
-    base_url="http://10.0.0.1:8080",
-    key_style="plain",
-    account_prefix=",0,",
-    operator_suffixes={},
-    js_version="4.2.1",
-    status="模板",
-    notes="改 base_url 和各路径后先跑 `campus-auth status` 验证能不能连通。",
-)
+
+class GenericAdapter(Adapter):
+    def __init__(self) -> None:
+        super().__init__(
+            name="generic",
+            school="未具名学校（模板）",
+            base_url="http://10.0.0.1:8080",
+            key_style="plain",
+            account_prefix=",0,",
+            operator_suffixes={},
+            js_version="4.2.1",
+            status="模板",
+            notes="改 base_url 和各路径后先跑 `campus-auth status` 验证能不能连通。",
+        )
+
+
+ADAPTER = GenericAdapter()

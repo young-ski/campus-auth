@@ -9,7 +9,7 @@
 4. 响应怎么解读（`interpret_login` / `interpret_sessions`）
 
 默认行为（GET + JSONP + `list` 数组 + `result`/`ret_code`）覆盖 Dr.COM 系；
-锐捷、深澜只覆盖需要变的那几个方法，不重写 core。
+某所学校需要变的东西，只覆盖对应方法，不重写 core。
 新增一所学校 = 抄一份 `example_generic.py` 改常量，别动 core。
 """
 
@@ -63,7 +63,6 @@ class PortalLike(Protocol):
     account: str
     password: str
     operator: str
-    check_url: str
     ctx: dict[str, object]
 
     def raw(self, url: str, *, timeout: float | None = None) -> tuple[int, str]: ...
@@ -100,7 +99,6 @@ class Adapter:
     verify_tls: bool = False
     status: str = "已验证"
     notes: str = ""
-    logout_needs_password: bool = False
 
     # ---------- 编码 ----------
 
@@ -255,9 +253,6 @@ class Adapter:
 
     def after_login(self, portal: PortalLike, payload: Mapping[str, object]) -> None:
         """登录成功后收尾（比如存下 userIndex）；默认什么都不做。"""
-
-    def after_logout(self, portal: PortalLike, payload: Mapping[str, object]) -> None:
-        """注销后的收尾（比如丢掉缓存的 userIndex）；默认什么都不做。"""
 
     def zone_hint(self, ip: str, ssid: str | None) -> str:
         return ""

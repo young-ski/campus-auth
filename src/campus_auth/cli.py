@@ -53,7 +53,6 @@ def _parser() -> argparse.ArgumentParser:
     common.add_argument("--timeout", type=float, help="单次请求超时秒数")
     common.add_argument("--retries", type=int, help="传输重试次数")
     common.add_argument("--verify-tls", action="store_true", help="校验证书")
-    common.add_argument("--check-url", help="在线判定用的 204 地址（默认 connect.rom.miui.com）")
     common.add_argument("--json", action="store_true", help="输出 JSON")
 
     sub = parser.add_subparsers(dest="command", required=True)

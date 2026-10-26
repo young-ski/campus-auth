@@ -122,7 +122,6 @@ class Portal:
         account: str = "",
         password: str = "",
         operator: str = "none",
-        check_url: str = "",
     ) -> None:
         adapter.check()
         self.adapter = adapter
@@ -135,7 +134,6 @@ class Portal:
         self.account = account
         self.password = password
         self.operator = operator
-        self.check_url = check_url
         self.ctx: dict[str, object] = {}
         self.last_url = ""
         self._ctx_tls = _ssl_context(self.verify_tls)
@@ -265,9 +263,7 @@ class Portal:
     def logout(self) -> dict[str, object]:
         if not self.ctx:
             self.prepare()
-        payload = self.request(self.adapter.logout_request(self))
-        self.adapter.after_logout(self, payload)
-        return payload
+        return self.request(self.adapter.logout_request(self))
 
     def unbind(self) -> dict[str, object]:
         if not self.ctx:

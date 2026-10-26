@@ -210,77 +210,38 @@ def test_logout_and_unbind(campus: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert run(["unbind", "-a", "1", "-p", "p"]) == 0
 
 
-def test_unbind_ruijie_goes_to_interface(
-    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
-) -> None:
-    # 直接给 index.jsp，解绑时才不用真去撞 204 劫持页
-    config = campus / "ruijie.toml"
-    config.write_text(
-        'adapter = "ruijie"\naccount = "20240001"\n'
-        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
-        encoding="utf-8",
-    )
+def test_unbind_uses_mac_unbind_path(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     seen: dict[str, object] = {}
 
     def fake_request(self: Portal, request):
         seen["path"] = request.path
-        seen["body"] = dict(request.body)
-        return {"result": "success", "message": "解绑成功"}
+        seen["method"] = request.method
+        return {"result": 1, "ret_code": 0, "msg": "解绑成功"}
 
     monkeypatch.setattr(Portal, "request", fake_request)
-    assert run(["unbind", "--config", str(config)]) == 0
-    assert str(seen["path"]).endswith("InterFace.do?method=unbind")
-    assert seen["body"]["userId"] == "20240001"
+    assert run(["unbind", "-a", "0814"]) == 0
+    assert str(seen["path"]).endswith("/eportal/portal/mac/unbind")
+    assert seen["method"] == "GET"
     assert "解绑成功" in capsys.readouterr().out
 
 
-def test_logout_ruijie_in_a_later_process(
+def test_login_then_logout_in_separate_runs(
     campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    """login 和 logout 是两次独立运行：userIndex 只能靠落盘传过去。"""
-    config = campus / "ruijie.toml"
-    config.write_text(
-        'adapter = "ruijie"\naccount = "20240001"\n'
-        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
-        encoding="utf-8",
-    )
-    server = {"index": "", "seq": 0}
-
-    def fake_request(self: Portal, request):
-        if "method=login" in request.path:
-            server["seq"] += 1
-            server["index"] = f"idx{server['seq']}"
-            return {"result": "success", "userIndex": server["index"]}
-        if "method=logout" in request.path:
-            if request.body["userIndex"] != server["index"]:
-                return {"result": "fail", "message": "未登录"}
-            return {"result": "success", "message": "注销成功"}
-        return {}
-
-    monkeypatch.setattr(Portal, "request", fake_request)
-    # 别去撞真 204：登录过程中和 login 之后都会问一次在线与否
-    monkeypatch.setattr(Portal, "raw", lambda *a, **k: ((204 if server["index"] else 200), ""))
-
-    assert run(["login", "--config", str(config), "-p", "pw"]) == 0
-    assert run(["logout", "--config", str(config)]) == 0
-    # 缓存注销成功后就被丢掉了，再注销一次只能拿空 userIndex 去撞
-    assert run(["logout", "--config", str(config)]) == 1
-    assert "userIndex" in capsys.readouterr().out
+    state = fake_portal(monkeypatch)
+    assert run(["login", "-a", "0814", "-p", "pw"]) == 0
+    assert state["logins"] == 1
+    assert run(["logout", "-a", "0814"]) == 0
+    assert "服务端: ok" in capsys.readouterr().out
 
 
 def test_logout_hint_does_not_repeat_the_message(
     campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    config = campus / "ruijie.toml"
-    config.write_text(
-        'adapter = "ruijie"\naccount = "20240001"\n'
-        'base_url = "http://1.2.3.4/eportal/index.jsp?service=x"\n',
-        encoding="utf-8",
-    )
     monkeypatch.setattr(
-        Portal, "request", lambda self, request: {"result": "fail", "message": "没收录的新错"}
+        Portal, "request", lambda self, request: {"result": 0, "ret_code": 1, "msg": "没收录的新错"}
     )
-    assert run(["logout", "--config", str(config)]) == 1
+    assert run(["logout", "-a", "0814"]) == 1
     out = capsys.readouterr().out
     assert out.count("没收录的新错") == 1
 
@@ -379,21 +340,17 @@ def test_watch_log_still_prints(campus: Path, monkeypatch: pytest.MonkeyPatch, c
 def test_unbind_transport_error_prints_hint(
     campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    """深澜回 HTML 时别再甩 200 字符原文，给一句人话。"""
+    """门户回 HTML 时别再甩 200 字符原文，给一句人话。"""
     from campus_auth.errors import TransportError
-
-    config = campus / "srun.toml"
-    config.write_text('adapter = "srun"\naccount = "20240001"\n', encoding="utf-8")
 
     def boom(self: Portal, request):
         raise TransportError("响应里没有可解析的 JSON 对象: '<!doctype html>...'")
 
     monkeypatch.setattr(Portal, "request", boom)
-    monkeypatch.setattr(Portal, "raw", lambda *a, **k: (200, "<script>var ac_id='12';</script>"))
-    assert run(["unbind", "--config", str(config)]) == 4
+    assert run(["unbind", "-a", "0814"]) == 4
     out = capsys.readouterr().out
     assert "解绑失败" in out
-    assert "没有解绑接口" in out
+    assert "eportal 入口" in out
 
 
 def test_password_prompts_on_tty(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,7 +2,26 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
-## 未发布（0.5.0 → 0.9.5）
+## 0.10.0 —— 范围收敛到 Dr.COM
+
+**破坏性**：锐捷、深澜整条线移除。维护者拿不到真机，不想一直挂着“未实机”。
+两者已经做过的实现留在 git 历史里（最后一个含它们的版本是 `0.9.8`）。
+
+### 移除
+
+- `adapters/ruijie.py`、`adapters/srun.py`、`crypto_srun.py` 及其测试；
+  `probe` 仍能认出这两家，判到就直说“暂不支持”
+- 只有它们用到的基建：`state.py`（`userIndex` 缓存）、`after_logout` 钩子、
+  `check_url` / `--check-url`、`logout_needs_password`
+- 假门户的 `--style ruijie|srun|srun --variant`，现在只剩 `drcom` 和 `router`（路由器页）
+
+### 变更
+
+- `generic` 模板改成可继承的子类骨架；CONTRIBUTING 改成真实存在的 API
+- 假门户会真解一遍账号密码（`wlan_user_ip` 推密钥、解不出来就拒）
+- Issue 模板的门户类型可选锐捷/深澜并标注“暂不支持”
+
+## 未发布（0.5.0 → 0.9.8）
 
 ### 新增
 

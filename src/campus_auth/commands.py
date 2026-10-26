@@ -108,8 +108,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
     label = {
         "drcom": "是 Dr.COM（eportal）",
         "likely-drcom": "像是 Dr.COM，但证据不全",
-        "ruijie": "是锐捷 ePortal，不是 Dr.COM",
-        "srun": "是深澜 Srun，不是 Dr.COM",
+        "ruijie": "是锐捷 ePortal（本项目暂不支持）",
+        "srun": "是深澜 Srun（本项目暂不支持）",
         "unknown": "没认出来",
     }[analysis.verdict]
     _say(f"目标 {used}")
@@ -121,14 +121,12 @@ def cmd_probe(args: argparse.Namespace) -> int:
     for note in analysis.notes:
         _say(f"! {note}")
     _say("")
-    target_hint = f" --url {used}" if analysis.verdict in {"ruijie", "srun"} else ""
-    howto = f"跑不通就照样式改 adapter；先试 `campus-auth login --adapter {{}}{target_hint}`"
     advice = {
-        "drcom": "用内置 huuc 当模板起适配层，主要改 base_url、路径和密钥函数。",
+        "drcom": "照 CONTRIBUTING 抄一份 generic 适配层，主要改 base_url、路径和密钥函数。",
         "likely-drcom": "像 Dr.COM 但证据不够，先 F12 抓一次真登录请求再动手。",
-        "ruijie": howto.format("ruijie"),
-        "srun": howto.format("srun"),
-        "unknown": "内置的 huuc / ruijie / srun 都对不上，先确认门户类型。",
+        "ruijie": "锐捷不在本项目范围内：换别的工具，或按 CONTRIBUTING 另写适配层。",
+        "srun": "深澜不在本项目范围内：换别的工具，或按 CONTRIBUTING 另写适配层。",
+        "unknown": "内置的 huuc / generic 都对不上，先确认门户类型（路由器页、802.1X 也长这样）。",
     }[analysis.verdict]
     _say(advice)
     if analysis.missing and analysis.is_drcom:
@@ -299,7 +297,7 @@ def _hint_line(ctx, ok: bool, msg: object) -> None:
 
 def cmd_logout(args: argparse.Namespace) -> int:
     config = _config(args)
-    ctx = build(config, need_password=adapters.get_adapter(config.adapter).logout_needs_password)
+    ctx = build(config, need_password=False)  # Dr.COM 注销不校验密码
     require_campus(ctx)
     payload = ctx.portal.logout()
     msg = (
@@ -323,7 +321,7 @@ def cmd_unbind(args: argparse.Namespace) -> int:
     try:
         payload = ctx.portal.unbind()
     except TransportError as exc:
-        # 深澜没有解绑接口，回的是 HTML，解析不出 JSON 就落到这里
+        # 门户回 HTML（地址写错、改版）时解析不出 JSON，落到这里
         _say(f"解绑失败: {str(exc).splitlines()[0]}")
         hint = ctx.adapter.hint_for(None, str(exc))
         if hint:
@@ -348,7 +346,7 @@ def cmd_urls(args: argparse.Namespace) -> int:
     if not config.ip and not net.resolves(_host_port(ctx.portal.base_url)[0]):
         _say("! 门户域名解析不了，生成的 URL 要等你回到校园网才有效")
 
-    # 锐捷/深澜要先发现门户地址和 challenge，离线时可能拿不到
+    # discover 要先敲一次门户，离线时可能拿不到
     discovered = True
     try:
         ctx.portal.prepare()
@@ -492,7 +490,6 @@ def _config(args: argparse.Namespace) -> Config:
         "base_url": args.url,
         "timeout": args.timeout,
         "retries": args.retries,
-        "check_url": args.check_url,
     }
     if args.password_stdin:
         overrides["password"] = sys.stdin.readline().rstrip("\r\n")

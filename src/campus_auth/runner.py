@@ -70,7 +70,6 @@ def build(config: Config, *, need_password: bool = True) -> Context:
         account=config.account,
         password=config.password,
         operator=config.operator,
-        check_url=config.check_url,
     )
     return Context(
         config=config,

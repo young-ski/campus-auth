@@ -1,15 +1,10 @@
-"""全局夹具：测试永远别碰真实的 state.json，也别碰真实的系统钥匙串。"""
+"""全局夹具：测试永远别碰真实的系统钥匙串。"""
 
 from __future__ import annotations
 
 import pytest
 
-from campus_auth import credentials, state
-
-
-@pytest.fixture(autouse=True)
-def _isolated_state(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv(state.ENV_STATE, str(tmp_path / "state.json"))
+from campus_auth import credentials
 
 
 @pytest.fixture(autouse=True)

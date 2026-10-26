@@ -21,6 +21,8 @@ body:
       label: 门户类型
       options:
         - Dr.COM eportal
+        - 锐捷（本项暂不支持，先登记）
+        - 深澜（本项暂不支持，先登记）
         - 其它（在校验说明里写）
     validations:
       required: true

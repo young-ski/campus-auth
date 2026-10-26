@@ -22,9 +22,10 @@ import urllib.parse
 import urllib.request
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from typing import NoReturn
 
 from .adapters.base import Adapter, LoginResult, Request
-from .errors import TransportError
+from .errors import ParseError, TransportError
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth"
 
@@ -94,7 +95,7 @@ def extract_json(body: str) -> dict[str, object]:
                     except json.JSONDecodeError:
                         break
         start = body.find("{", start + 1)
-    raise TransportError(f"响应里没有可解析的 JSON 对象: {body[:200]!r}")
+    raise ParseError(f"响应里没有可解析的 JSON 对象: {body[:200]!r}")
 
 
 @dataclass
@@ -175,13 +176,13 @@ class Portal:
                 return extract_json(body)
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode("utf-8", "replace")
-                if exc.code in (429, 503):
+                if exc.code in (429, 503) and attempt < self.retries:
                     delay = _retry_after(exc.headers.get("Retry-After"), 2.0 * (attempt + 1))
-                    if attempt < self.retries:
-                        time.sleep(delay)
-                        continue
-                return extract_json(body) if "{" in body else _raise_http(exc, body)
-            except (urllib.error.URLError, TimeoutError, OSError, TransportError) as exc:
+                    time.sleep(delay)
+                    continue
+                # 4xx/5xx 一律算失败：错误页里也可能带个 `{"result":0}`，别当成功
+                _raise_http(exc, body)
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = exc
                 if attempt < self.retries:
                     time.sleep(1.5 * (attempt + 1) + random.random())
@@ -271,7 +272,7 @@ class Portal:
         return self.request(self.adapter.unbind_request(self))
 
 
-def _raise_http(exc: urllib.error.HTTPError, body: str) -> dict[str, object]:
+def _raise_http(exc: urllib.error.HTTPError, body: str) -> NoReturn:
     raise TransportError(f"HTTP {exc.code} {exc.reason}: {body[:200]!r}") from exc
 
 

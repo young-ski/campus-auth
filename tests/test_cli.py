@@ -438,3 +438,52 @@ def test_login_is_not_skipped_when_ip_has_a_foreign_session(
     monkeypatch.setattr(Portal, "request", fake_request)
     assert run(["login", "-a", "0814", "-p", "pw"]) == 0
     assert state["logins"] == 1
+
+
+# ---------- 错误分类与退出码 ----------
+
+
+def test_check_maps_transport_error_to_4(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth.errors import TransportError
+
+    def boom(self: Portal, request):
+        raise TransportError("超时")
+
+    monkeypatch.setattr(Portal, "request", boom)
+    assert run(["check", "-q"]) == 4
+
+
+def test_check_maps_parse_error_to_1(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth.errors import ParseError
+
+    def boom(self: Portal, request):
+        raise ParseError("回的是 HTML")
+
+    monkeypatch.setattr(Portal, "request", boom)
+    assert run(["check", "-q"]) == 1
+
+
+def test_broken_pipe_exits_quietly(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(_args):
+        raise BrokenPipeError()
+
+    monkeypatch.setattr(cli, "cmd_adapters", boom)
+    assert cli.main(["adapters"]) == 0
+
+
+def test_windows_invalid_argument_is_not_a_crash(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_args):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(cli, "cmd_adapters", boom)
+    assert cli.main(["adapters"]) == 0
+
+
+def test_other_oserror_still_crashes(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(_args):
+        raise OSError(2, "No such file")
+
+    monkeypatch.setattr(cli, "cmd_adapters", boom)
+    assert cli.main(["adapters"]) == 70

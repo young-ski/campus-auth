@@ -34,5 +34,11 @@ class EnvironmentError_(CampusAuthError):
     exit_code = EXIT_ENV
 
 
+class ParseError(CampusAuthError):
+    """响应拿到了，但不是能解析的 JSON。不重试：重发一遍还是一样。"""
+
+    exit_code = EXIT_REJECTED
+
+
 class TransportError(CampusAuthError):
     exit_code = EXIT_TRANSPORT

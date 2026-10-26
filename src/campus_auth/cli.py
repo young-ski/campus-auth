@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import sys
 import traceback
 
@@ -28,7 +29,14 @@ from .commands import (
     cmd_urls,
     cmd_watch,
 )
-from .errors import EXIT_CONFIG, EXIT_ENV, CampusAuthError, ConfigError, EnvironmentError_
+from .errors import (
+    EXIT_CONFIG,
+    EXIT_ENV,
+    EXIT_OK,
+    CampusAuthError,
+    ConfigError,
+    EnvironmentError_,
+)
 
 __all__ = ["main"]
 
@@ -135,6 +143,15 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         _err("已中断")
         return 130
+    except (BrokenPipeError, OSError) as exc:
+        # `campus-auth ... | head` 会在这里断掉；Windows 上是 errno 22，POSIX 是 32
+        if isinstance(exc, BrokenPipeError) or getattr(exc, "errno", None) in {22, 32}:
+            with contextlib.suppress(OSError, ValueError):
+                sys.stdout = open(os.devnull, "w")  # noqa: SIM115
+            return EXIT_OK
+        _err(f"意外错误: {exc!r}")
+        traceback.print_exc()
+        return 70
     except Exception as exc:  # 未预期的错误给 traceback，别静默
         _err(f"意外错误: {exc!r}")
         traceback.print_exc()

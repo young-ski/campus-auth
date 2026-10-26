@@ -24,6 +24,7 @@ from .errors import (
     EXIT_REJECTED,
     EXIT_TRANSPORT,
     CampusAuthError,
+    ParseError,
     TransportError,
 )
 from .keepalive import Cycle, watch
@@ -215,8 +216,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     ctx = build(config, need_password=False)
     try:
         online = ctx.portal.mine() is not None
-    except CampusAuthError:
-        return EXIT_ENV
+    except CampusAuthError as exc:
+        return exc.exit_code
     if args.quiet:
         return EXIT_OK if online else EXIT_REJECTED
     _say("online" if online else "offline")
@@ -362,7 +363,7 @@ def cmd_unbind(args: argparse.Namespace) -> int:
     require_campus(ctx)
     try:
         payload = ctx.portal.unbind()
-    except TransportError as exc:
+    except (TransportError, ParseError) as exc:
         # 门户回 HTML（地址写错、改版）时解析不出 JSON，落到这里
         _say(f"解绑失败: {str(exc).splitlines()[0]}")
         hint = ctx.adapter.hint_for(None, str(exc))

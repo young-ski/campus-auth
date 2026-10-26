@@ -11,7 +11,7 @@ import pytest
 from campus_auth.adapters.base import Adapter, Param, Request
 from campus_auth.adapters.huuc import ADAPTER as HUUC
 from campus_auth.crypto import xor_unhex
-from campus_auth.errors import TransportError
+from campus_auth.errors import ParseError, TransportError
 from campus_auth.portal import Portal, extract_json, iter_retry_delays
 
 IP = "10.152.59.163"
@@ -49,7 +49,7 @@ def test_extract_json_prefers_valid_object() -> None:
 
 @pytest.mark.parametrize("body", ["", "no object here", "<html></html>"])
 def test_extract_json_failure(body: str) -> None:
-    with pytest.raises(TransportError):
+    with pytest.raises(ParseError):
         extract_json(body)
 
 
@@ -218,11 +218,13 @@ def test_retry_delays_capped() -> None:
     assert max(delays) <= 8
 
 
-def http_error(code: int, retry_after: str | None) -> urllib.error.HTTPError:
+def http_error(
+    code: int, retry_after: str | None, body: str = '{"ok":1}'
+) -> urllib.error.HTTPError:
     headers = email.message.Message()
     if retry_after is not None:
         headers["Retry-After"] = retry_after
-    return urllib.error.HTTPError("http://x/p", code, "boom", headers, io.BytesIO(b'{"ok":1}'))
+    return urllib.error.HTTPError("http://x/p", code, "boom", headers, io.BytesIO(body.encode()))
 
 
 def opener_from(monkeypatch: pytest.MonkeyPatch, portal: Portal, seq: list) -> None:
@@ -283,3 +285,34 @@ def test_retry_after_is_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     opener_from(monkeypatch, portal, seq)
     portal.request(Request("/p"))
     assert slept == [pytest.approx(60.0)]
+
+
+def test_html_200_is_parsed_as_failure_without_retrying(monkeypatch: pytest.MonkeyPatch) -> None:
+    """回了个成功页 HTML 时，重发一遍也是一样的，别打三次。"""
+    calls = {"n": 0}
+
+    def fake_open(*_a, **_k):
+        calls["n"] += 1
+        return FakeResponse("<html>登录成功，欢迎</html>")
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    portal = Portal(HUUC, timeout=1, retries=2, ip=IP)
+    monkeypatch.setattr(portal._opener, "open", fake_open)
+    with pytest.raises(ParseError):
+        portal.request(Request("/p"))
+    assert calls["n"] == 1
+
+
+@pytest.mark.parametrize("code", [403, 500])
+def test_error_status_with_json_body_is_still_failure(
+    monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    """错误页里也可能带 `{"result":0}`，不能因为含 { 就当成功。"""
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
+
+    def boom(*_a, **_k):
+        raise http_error(code, None)
+
+    monkeypatch.setattr(portal._opener, "open", boom)
+    with pytest.raises(TransportError, match=f"HTTP {code}"):
+        portal.request(Request("/p"))

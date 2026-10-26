@@ -244,8 +244,14 @@ class Adapter:
         rows = payload.get("list") or []
         return [row for row in rows if isinstance(row, dict)]  # type: ignore[misc]
 
-    def row_is_mine(self, row: Mapping[str, object], ip: str, mac: str) -> bool:
-        return str(row.get("online_ip") or "") == ip
+    def row_is_mine(self, row: Mapping[str, object], ip: str, mac: str, account: str = "") -> bool:
+        """IP 对上、且（给了账号时）账号也对上 —— 别人占着这个 IP 不算你的会话。"""
+        if str(row.get("online_ip") or "") != ip:
+            return False
+        if not account:
+            return True
+        actual = str(row.get("user_account") or row.get("user_name") or "")
+        return not actual or account in actual
 
     def online_check(self, portal: PortalLike) -> bool | None:
         """在线判定。返回 None 表示"走会话列表"，返回 True/False 表示自己判定。"""

@@ -248,7 +248,7 @@ class Portal:
         if flag is not None:
             return Session(ip=self.ip, account=self.account) if flag else None
         for row in self.sessions():
-            if self.adapter.row_is_mine(row.raw, self.ip, self.mac):
+            if self.adapter.row_is_mine(row.raw, self.ip, self.mac, self.account):
                 return row
         return None
 

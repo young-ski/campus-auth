@@ -97,6 +97,7 @@ def test_status_online_json(campus: Path, monkeypatch: pytest.MonkeyPatch, capsy
     assert run(["status", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["online"] is True
+    assert payload["sessions"][0]["ours"] is True
     assert payload["sessions"][0]["online_ip"] == IP
 
 
@@ -387,3 +388,53 @@ def test_password_empty_input(campus: Path, monkeypatch: pytest.MonkeyPatch) -> 
         type("S", (), {"isatty": lambda self: False, "readline": lambda self: "\n"})(),
     )
     assert run(["password"]) == 2
+
+
+# ---------- status 的自我核对 ----------
+
+
+def test_status_without_account_fails_fast(campus: Path, capsys) -> None:
+    bare = campus / "bare2.toml"
+    bare.write_text('adapter = "huuc"\n', encoding="utf-8")
+    assert run(["status", "--config", str(bare)]) == 2
+    assert "还没填 account" in capsys.readouterr().out
+
+
+def test_status_marks_foreign_session_on_my_ip(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake_portal(monkeypatch)
+    foreign = {"list": [{"online_ip": IP, "user_account": "别人的号"}]}
+    monkeypatch.setattr(Portal, "request", lambda self, req: foreign)
+    assert run(["status"]) == 1
+    out = capsys.readouterr().out
+    assert "（别人）" in out
+    assert "不是 0814" in out
+
+
+def test_status_marks_my_session(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    fake_portal(monkeypatch)
+    own = {"list": [{"online_ip": IP, "user_account": "0814"}]}
+    monkeypatch.setattr(Portal, "request", lambda self, req: own)
+    assert run(["status"]) == 0
+    assert "（你）" in capsys.readouterr().out
+
+
+def test_login_is_not_skipped_when_ip_has_a_foreign_session(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = fake_portal(monkeypatch)
+    state["online"] = True
+    ours = {"now": False}
+
+    def fake_request(self: Portal, req):
+        if req.path.endswith("online_list"):
+            account = "0814" if ours["now"] else "别人的号"
+            return {"list": [{"online_ip": IP, "user_account": account}]}
+        ours["now"] = True
+        state["logins"] += 1
+        return {"result": 1, "ret_code": 0, "msg": "认证成功"}
+
+    monkeypatch.setattr(Portal, "request", fake_request)
+    assert run(["login", "-a", "0814", "-p", "pw"]) == 0
+    assert state["logins"] == 1

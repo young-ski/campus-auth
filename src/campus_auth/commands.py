@@ -34,7 +34,7 @@ from .runner import Context, _host_port, build, require_campus
 CONFIG_TEMPLATE = """\
 # campus-auth 配置。密码建议放系统钥匙串（`campus-auth password`），其次环境变量 {env}。
 adapter = "{adapter}"
-account = "你的学号"
+account = ""            # 学号，纯数字，别带 @ 后缀
 password = ""
 operator = "none"      # none / {operators}
 # mac = ""             # 留空自动探测
@@ -87,7 +87,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     _say(f"已写入 {target}")
-    _say(f"下一步：填 account，导出 ${ENV_PASSWORD}，然后 `campus-auth status`")
+    _say("下一步：填 account，然后存密码 —— `campus-auth password`（交互式，不回显）")
+    if not credentials.available():
+        _say(f"! 没装 keyring：改用 export ${ENV_PASSWORD}=...，或装 campus-auth[keyring]")
+    _say("填完跑 `campus-auth status` 自检：没配好它会直接指出来")
     return EXIT_OK
 
 
@@ -150,22 +153,61 @@ def cmd_adapters(_: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     config = _config(args)
+    if not config.account:
+        _say("! 还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status。")
+        return EXIT_CONFIG
     ctx = build(config, need_password=False)
     require_campus(ctx)
     sessions = ctx.portal.sessions()
+
+    mine = [session for session in sessions if _is_ours(session, ctx)]
+    others = [session for session in sessions if session not in mine]
+
     if args.json:
-        _dump({"online": bool(sessions), "ip": ctx.ip, "sessions": [s.raw for s in sessions]})
-        return EXIT_OK if sessions else EXIT_REJECTED
+        _dump(
+            {
+                "online": bool(mine),
+                "ip": ctx.ip,
+                "account": config.account,
+                "sessions": [{**s.raw, "ours": s in mine} for s in sessions],
+            }
+        )
+        return EXIT_OK if mine else EXIT_REJECTED
+
     if not sessions:
         _say(f"未在线（本机 {ctx.ip}，{ctx.zone}）")
         _zone_line(ctx)
         return EXIT_REJECTED
-    for session in sessions:
+
+    for session in mine:
+        account_text = session.account or config.account
+        traffic = f"{session.uplink or '?'}/{session.downlink or '?'} B"
         _say(
-            f"在线  账号 {session.account}  IP {session.ip}  时长 {session.time_long}s  "
-            f"上行/下行 {session.uplink}/{session.downlink} B"
+            f"在线（你）  账号 {account_text}  IP {session.ip}  "
+            f"时长 {session.time_long or '?'}s  上行/下行 {traffic}"
         )
-    return EXIT_OK
+    for session in others:
+        _say(f"在线（别人）账号 {session.account}  IP {session.ip}  时长 {session.time_long}s")
+
+    if mine:
+        return EXIT_OK
+    if any(session.ip == ctx.ip for session in sessions):
+        _say(
+            f"! 本机 IP {ctx.ip} 上有会话，但账号不是 {config.account} —— "
+            "可能是上一位用户还没掉线：等它超时，或 `campus-auth unbind` 解绑。"
+        )
+    else:
+        _say(f"! 门户里有人在线，但没有本机 IP {ctx.ip} 的会话 —— 你还没登录。")
+    return EXIT_REJECTED
+
+
+def _is_ours(session, ctx: Context) -> bool:
+    """IP 对上、且账号也对上才算“是我们自己的会话”。"""
+    if session.ip != ctx.ip:
+        return False
+    if not session.account:
+        return True  # 门户没回账号，只能按 IP 认
+    return ctx.config.account in session.account
 
 
 def cmd_check(args: argparse.Namespace) -> int:

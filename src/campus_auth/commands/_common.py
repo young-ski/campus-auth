@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any
 
 from ..config import Config, load
 from ..runner import Context, build, require_campus
@@ -29,6 +28,10 @@ probe_host = "www.baidu.com"
 
 # ---------- 输出 ----------
 
+# `--json` 输出都带这个整数；字段只增不减，破坏性改动才加一。
+# 见 docs/json.md。
+JSON_SCHEMA_VERSION = 1
+
 
 def _say(message: str = "") -> None:
     print(message, flush=True)
@@ -38,8 +41,10 @@ def _err(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _dump(data: Any) -> None:
-    print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
+def _dump(data: dict) -> None:
+    """打印一个 JSON 对象，统一挂上 schema 版本。"""
+    payload = {"schema": JSON_SCHEMA_VERSION, **data}
+    print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
 
 
 def _zone_line(ctx: Context) -> None:

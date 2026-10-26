@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "campus-auth --json 输出（schema 1）",
+  "description": "字段说明见 docs/json.md。同一 schema 版本内只增不改；破坏性改动加 schema 版本。",
+  "definitions": {
+    "schema": { "const": 1 },
+    "error": {
+      "type": "object",
+      "required": ["schema", "ok", "error"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "const": false },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "verdict": { "enum": ["drcom", "likely-drcom", "ruijie", "srun", "unknown"] },
+    "confidence": { "enum": ["高", "中", "低"] },
+    "probe": {
+      "type": "object",
+      "required": [
+        "schema", "target", "verdict", "is_drcom", "confidence", "score",
+        "evidence", "missing", "notes"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "target": { "type": "string" },
+        "verdict": { "$ref": "#/definitions/verdict" },
+        "is_drcom": { "type": "boolean" },
+        "confidence": { "$ref": "#/definitions/confidence" },
+        "score": { "type": "integer", "minimum": 0 },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "weight", "hit"],
+            "properties": {
+              "name": { "type": "string" },
+              "weight": { "type": "integer" },
+              "hit": { "type": "boolean" },
+              "detail": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "session": {
+      "type": "object",
+      "required": ["ours"],
+      "properties": { "ours": { "type": "boolean" } },
+      "additionalProperties": true
+    },
+    "status": {
+      "type": "object",
+      "required": ["schema", "online", "any_online", "ip", "account", "sessions"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "online": { "type": "boolean" },
+        "any_online": { "type": "boolean" },
+        "ip": { "type": "string" },
+        "account": { "type": "string" },
+        "sessions": { "type": "array", "items": { "$ref": "#/definitions/session" } }
+      },
+      "additionalProperties": true
+    },
+    "login": {
+      "type": "object",
+      "required": ["schema", "ok", "result", "msg", "ret_code", "hint", "ip"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "type": "boolean" },
+        "result": { "type": "boolean" },
+        "msg": { "type": "string" },
+        "ret_code": { "type": ["integer", "null"] },
+        "hint": { "type": "string" },
+        "ip": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": ["schema", "ok", "msg"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "type": "boolean" },
+        "msg": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "watch_start": {
+      "type": "object",
+      "required": [
+        "schema", "event", "adapter", "portal", "account", "operator", "ip", "interval", "log"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "event": { "const": "start" },
+        "adapter": { "type": "string" },
+        "portal": { "type": "string" },
+        "account": { "type": "string" },
+        "operator": { "type": "string" },
+        "ip": { "type": "string" },
+        "interval": { "type": "number" },
+        "log": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "watch_cycle": {
+      "type": "object",
+      "required": [
+        "schema", "event", "t", "cycle", "online", "attempted", "ok", "msg", "elapsed_ms"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "event": { "const": "cycle" },
+        "t": { "type": "string" },
+        "cycle": { "type": "integer", "minimum": 1 },
+        "online": { "type": "boolean" },
+        "attempted": { "type": "boolean" },
+        "ok": { "type": "boolean" },
+        "msg": { "type": "string" },
+        "elapsed_ms": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "anyOf": [
+    { "$ref": "#/definitions/probe" },
+    { "$ref": "#/definitions/status" },
+    { "$ref": "#/definitions/login" },
+    { "$ref": "#/definitions/action" },
+    { "$ref": "#/definitions/watch_start" },
+    { "$ref": "#/definitions/watch_cycle" },
+    { "$ref": "#/definitions/error" }
+  ]
+}

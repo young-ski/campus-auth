@@ -2,6 +2,20 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 1.3.0
+
+### 新增
+
+- `--json` 输出有了 schema：每个对象带 `"schema": 1`，字段说明与稳定性承诺写在
+  [`docs/json.md`](docs/json.md)，机器可读版是 [`docs/json.schema.json`](docs/json.schema.json)，
+  `tests/test_json_schema.py` 会拿真实输出逐条校验
+- 配置 / 环境类错误也输出 JSON 错误对象（以前只有认证类错误才输出）
+
+### 变更
+
+- `status --json` 缺账号时 stdout 只剩 JSON，不再先打一行人读提示
+- 同一 schema 版本内只增字段、不改语义；破坏性改动会加 schema 版本
+
 ## 1.2.1
 
 ### 修复
@@ -88,6 +102,20 @@
 - `generic` 模板改成可继承的子类骨架；CONTRIBUTING 改成真实存在的 API
 - 假门户会真解一遍账号密码（`wlan_user_ip` 推密钥、解不出来就拒）
 - Issue 模板的门户类型可选锐捷/深澜并标注“暂不支持”
+
+## 1.3.0
+
+### 新增
+
+- `--json` 输出有了 schema：每个对象带 `"schema": 1`，字段说明与稳定性承诺写在
+  [`docs/json.md`](docs/json.md)，机器可读版是 [`docs/json.schema.json`](docs/json.schema.json)，
+  `tests/test_json_schema.py` 会拿真实输出逐条校验
+- 配置 / 环境类错误也输出 JSON 错误对象（以前只有认证类错误才输出）
+
+### 变更
+
+- `status --json` 缺账号时 stdout 只剩 JSON，不再先打一行人读提示
+- 同一 schema 版本内只增字段、不改语义；破坏性改动会加 schema 版本
 
 ## 1.2.1
 

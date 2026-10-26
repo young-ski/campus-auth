@@ -42,7 +42,7 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
   不会把网关点成 QPS 炸弹。
 - **宿舍 / 教学楼的运营商差异**：SSID 和网段决定要不要 `@cmcc` 后缀，选错就是
   `AC认证失败` —— 客户端会先提示，再把服务端的黑话翻译成人话。
-- **给脚本用**：`--json` 加下面那张退出码表，塞进计划任务和监控都不用解析中文。
+- **给脚本用**：`--json` 加下面那张退出码表，塞进计划任务和监控都不用解析中文；字段有 schema 版本和稳定性承诺，见 [`docs/json.md`](docs/json.md)。
 
 ## 三步上手
 
@@ -149,6 +149,12 @@ campus-auth uninstall           # 停掉并删干净
 日志在系统 state 目录（Windows `%LOCALAPPDATA%\campus-auth\watch.log`），`watch` 自己按
 1 MiB 轮转；三条实现都带自动重启，崩了会自己回来。
 
+## JSON 输出
+
+`--json` 的每个对象都带 `"schema": 1`，同一版本内只增字段、不删不改。
+字段表、示例和稳定性约定在 [`docs/json.md`](docs/json.md)，机器可读版在
+[`docs/json.schema.json`](docs/json.schema.json)（CI 会拿真实输出对一遍）。
+
 ## 命令与退出码
 
 | 命令 | 作用 |
@@ -157,7 +163,7 @@ campus-auth uninstall           # 停掉并删干净
 | `init` | 生成配置模板（`--force` 覆盖） |
 | `adapters` | 列出内置适配层与验证状态 |
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
-| `status` | 列出门户会话，标出哪条是你自己的；`--json` 里 `online` 指你自己、`any_online` 指门户里有任何会话 |
+| `status` | 列出门户会话，标出哪条是你自己的；`online` 指你自己、`any_online` 指门户里有任何会话 |
 | `check` | 只判定在线与否，结果走退出码 |
 | `watch` | 保活循环，启动打摘要、每轮带耗时；`--once` 跑一轮，`--log` 同时落盘（自动轮转） |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |

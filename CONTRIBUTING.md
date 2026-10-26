@@ -25,7 +25,7 @@
 - 核心（`portal.py` / `transport.py` / `commands/` / `config.py`）里出现 `if adapter == "xx"` 就算错。
 - 新的用户可见字符串写中文，代码注释也写中文，但标识符保持英文。
 - 提交前 `ruff check . && ruff format . && pytest` 必须全绿（CI 会跑同一套）。
-- 退出码是公开接口，改动要同步 README 的表和 `CHANGELOG.md`。
+- 退出码和 `--json` 字段都是公开接口：改字段要同步 `docs/json.md` 与 `docs/json.schema.json`（`tests/test_json_schema.py` 会拿真实输出校验），破坏性改动把 `schema` 加一。
 
 ## 发布（维护者）
 

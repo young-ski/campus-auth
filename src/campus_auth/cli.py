@@ -30,8 +30,6 @@ from .commands import (
     cmd_watch,
 )
 from .errors import (
-    EXIT_CONFIG,
-    EXIT_ENV,
     EXIT_OK,
     CampusAuthError,
     ConfigError,
@@ -222,14 +220,13 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return args.func(args)
-    except ConfigError as exc:
-        _err(f"配置: {exc}")
-        return EXIT_CONFIG
-    except EnvironmentError_ as exc:
-        _err(f"环境: {exc}")
-        return EXIT_ENV
-    except CampusAuthError as exc:
-        _err(str(exc))
+    except (ConfigError, EnvironmentError_, CampusAuthError) as exc:
+        # 人读的一律进 stderr；要 JSON 的话 stdout 上补一份机器可读的错误对象
+        prefix = {
+            ConfigError: "配置: ",
+            EnvironmentError_: "环境: ",
+        }.get(type(exc), "")
+        _err(f"{prefix}{exc}")
         if args.json:
             _dump({"ok": False, "error": str(exc)})
         return exc.exit_code

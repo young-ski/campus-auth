@@ -30,7 +30,11 @@ def _is_ours(session, ctx: Context) -> bool:
 def cmd_status(args: argparse.Namespace) -> int:
     config = _config(args)
     if not config.account:
-        _say("! 还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status。")
+        message = "还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status"
+        if args.json:
+            _dump({"ok": False, "error": message})
+        else:
+            _say(f"! {message}")
         return EXIT_CONFIG
     ctx = build(config, need_password=False)
     require_campus(ctx)

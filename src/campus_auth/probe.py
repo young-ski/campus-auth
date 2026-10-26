@@ -329,5 +329,12 @@ def probe(
     return analysis, base_url
 
 
+JSON_SCHEMA_VERSION = 1
+
+
 def to_json(analysis: Analysis, base_url: str) -> str:
-    return json.dumps({"target": base_url, **analysis.to_dict()}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"schema": JSON_SCHEMA_VERSION, "target": base_url, **analysis.to_dict()},
+        ensure_ascii=False,
+        indent=2,
+    )

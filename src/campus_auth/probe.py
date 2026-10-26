@@ -12,21 +12,16 @@ JSONP 回显、`result` 字段这类谁都会有的给低权；两家分数咬�
 
 from __future__ import annotations
 
-import contextlib
 import json
 import re
-import ssl
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .errors import EnvironmentError_, TransportError
+from .transport import MAX_BODY, Response, Transport, UrllibTransport
 
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth/probe"
-MAX_BODY = 200_000
 MAX_JS = 1  # 指纹基本都在第一个脚本里，多抓只是拖慢
 
 # 探针路径：都是匿名可访问的，且 Dr.COM / 锐捷 / 深澜 的反应互不相同。
@@ -227,54 +222,27 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
 # ---------- 取样 ----------
 
 
-def _context(verify: bool) -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    if not verify:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    with contextlib.suppress(ssl.SSLError):
-        ctx.set_ciphers("DEFAULT@SECLEVEL=0")
-    return ctx
-
-
-def _fetch(
-    url: str, ctx: ssl.SSLContext, timeout: float, limit: int = MAX_BODY
-) -> tuple[str, dict[str, str]]:
-    request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
-    try:
-        with urllib.request.urlopen(request, context=ctx, timeout=timeout) as resp:
-            raw = resp.read(limit)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            try:
-                text = raw.decode(charset, "replace")
-            except LookupError:
-                text = raw.decode("utf-8", "replace")
-            return text, {k.lower(): v for k, v in resp.headers.items()}
-    except urllib.error.HTTPError as exc:
-        body = exc.read(limit).decode("utf-8", "replace")
-        return body, {k.lower(): v for k, v in exc.headers.items()}
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise TransportError(f"{url} 取不到: {exc}") from exc
-
-
-def _absorb(url: str, ctx: ssl.SSLContext, timeout: float, js_chunks: list[str]) -> str:
+def _absorb(url: str, fetch, js_chunks: list[str]) -> str:
     """取一个页面，顺手抓它的 JS；取不到就返回空串。"""
     try:
-        text, _ = _fetch(url, ctx, timeout)
+        text = fetch(url).text
     except TransportError:
         return ""
     for src in _JS_SRC.findall(text)[:MAX_JS]:
         js_url = urllib.parse.urljoin(url, src)
         try:
-            chunk, _ = _fetch(js_url, ctx, timeout, limit=MAX_BODY)
+            js_chunks.append(fetch(js_url).text)
         except TransportError:
             continue
-        js_chunks.append(chunk)
     return text
 
 
 def collect(
-    base_url: str, *, timeout: float = 8.0, verify: bool = False
+    base_url: str,
+    *,
+    timeout: float = 8.0,
+    verify: bool = False,
+    transport: Transport | None = None,
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
 
@@ -285,43 +253,45 @@ def collect(
     if not parts.hostname:
         raise EnvironmentError_(f"看不懂的地址: {base_url!r}，要 http(s)://host[:port]")
     port = parts.port or (443 if parts.scheme == "https" else 80)
-    ctx = _context(verify)
+    send = transport or UrllibTransport(verify_tls=verify)
+
+    def fetch(url: str, limit: int = MAX_BODY) -> Response:
+        return send.send(url, timeout=timeout, limit=limit)
 
     samples: dict[str, str] = {}
     server = ""
     js_chunks: list[str] = []
     ok = 0
 
-    def grab(path: str) -> tuple[str, str, str, dict[str, str]] | None:
+    def grab(path: str) -> tuple[str, str, Response] | None:
         url = urllib.parse.urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
         try:
-            text, headers = _fetch(url, ctx, timeout)
+            return path, url, fetch(url)
         except TransportError:
             return None
-        return path, url, text, headers
 
     # 四条路径并发：校园网慢的时候不至于按 4 倍超时等
     with ThreadPoolExecutor(max_workers=len(PROBE_PATHS)) as pool:
         for got in pool.map(grab, PROBE_PATHS):
             if got is None:
                 continue
-            path, url, text, headers = got
+            path, url, response = got
             ok += 1
-            server = server or headers.get("server", "")
+            server = server or response.headers.get("server", "")
+            text = response.text
             samples["body"] = text if path == "/" else samples.get("body", "") + "\n" + text
             if path == "/":
                 for src in _JS_SRC.findall(text)[:MAX_JS]:
                     js_url = urllib.parse.urljoin(url, src)
                     try:
-                        chunk, _ = _fetch(js_url, ctx, timeout, limit=MAX_BODY)
+                        js_chunks.append(fetch(js_url).text)
                     except TransportError:
                         continue
-                    js_chunks.append(chunk)
 
     # 劫持页只给一句 location.href，指纹全在它指向的门户页上
     captive = _CAPTIVE.search(samples.get("body", ""))
     if captive:
-        page = _absorb(captive.group(1), ctx, timeout, js_chunks)
+        page = _absorb(captive.group(1), fetch, js_chunks)
         if page:
             samples["body"] = samples.get("body", "") + "\n" + page
 
@@ -333,8 +303,14 @@ def collect(
     return samples, server, port
 
 
-def probe(base_url: str, *, timeout: float = 8.0, verify: bool = False) -> tuple[Analysis, str]:
-    samples, server, port = collect(base_url, timeout=timeout, verify=verify)
+def probe(
+    base_url: str,
+    *,
+    timeout: float = 8.0,
+    verify: bool = False,
+    transport: Transport | None = None,
+) -> tuple[Analysis, str]:
+    samples, server, port = collect(base_url, timeout=timeout, verify=verify, transport=transport)
     return analyze(samples, server=server, port=port), base_url
 
 

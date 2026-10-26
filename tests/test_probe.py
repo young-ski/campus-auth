@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from fake_transport import DictTransport
 
 from campus_auth import cli, commands, probe
 from campus_auth.errors import TransportError
@@ -181,35 +182,25 @@ def test_collect_rejects_bad_url() -> None:
         probe.collect("nonsense")
 
 
-def test_collect_follows_captive_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_follows_captive_redirect() -> None:
     """锐捷的根页面只是 location.href 跳转，指纹在被指过去的页面上。"""
     captive = "http://10.0.0.1/eportal/index.jsp?wlanuserip=10.1.2.3"
-    pages = {
-        "http://10.0.0.1/": f"<script>location.href='{captive}'</script>",
-        captive: '<script src="/eportal/js/x.js"></script><form>锐捷</form>',
-        "http://10.0.0.1/eportal/js/x.js": "InterFace.do userIndex",
-    }
-
-    def fake_fetch(url, _ctx, _timeout, limit=probe.MAX_BODY):
-        if url not in pages:
-            raise TransportError(url)
-        return pages[url], {"server": "nginx"}
-
-    monkeypatch.setattr(probe, "_fetch", fake_fetch)
-    samples, _server, _port = probe.collect("http://10.0.0.1")
+    transport = DictTransport(
+        {
+            "http://10.0.0.1/": f"<script>location.href='{captive}'</script>",
+            captive: '<script src="/eportal/js/x.js"></script><form>锐捷</form>',
+            "http://10.0.0.1/eportal/js/x.js": "InterFace.do userIndex",
+        }
+    )
+    samples, _server, _port = probe.collect("http://10.0.0.1", transport=transport)
     assert "锐捷" in samples["body"]
     assert "InterFace.do" in samples["js"]
     assert analyze(samples).verdict == "ruijie"
 
 
-def test_collect_asks_ruijie_inter_face(monkeypatch: pytest.MonkeyPatch) -> None:
-    asked: list[str] = []
-
-    def fake_fetch(url, _ctx, _timeout, limit=probe.MAX_BODY):
-        asked.append(url)
-        return "", {}
-
-    monkeypatch.setattr(probe, "_fetch", fake_fetch)
-    probe.collect("http://10.0.0.1")
-    assert any("InterFace.do" in url for url in asked)
-    assert any("index.jsp" in url for url in asked)
+def test_collect_asks_inter_face_and_index() -> None:
+    transport = DictTransport({})
+    with pytest.raises(TransportError):
+        probe.collect("http://10.0.0.1", transport=transport)
+    assert any("InterFace.do" in url for url in transport.calls)
+    assert any("index.jsp" in url for url in transport.calls)

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import datetime
-import email.message
 import email.utils
-import io
 import urllib.error
+import urllib.parse
 
 import pytest
+from fake_transport import FakeTransport
 
 from campus_auth.adapters.base import Adapter, Param, Request
 from campus_auth.adapters.huuc import ADAPTER as HUUC
+from campus_auth.adapters.huuc import key_for
 from campus_auth.crypto import xor_unhex
 from campus_auth.errors import ParseError, TransportError
-from campus_auth.portal import Portal, extract_json, iter_retry_delays
-from campus_auth.portal import _mask_url as probe_module_mask
+from campus_auth.portal import Portal, _mask_url, extract_json, iter_retry_delays
 
 IP = "10.152.59.163"
 
@@ -94,20 +94,15 @@ def test_base_url_override() -> None:
 # ---------- 业务 ----------
 
 
-def test_login_passes_operator(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict = {}
-
-    def fake(self: Portal, request: Request) -> dict:
-        seen["path"] = request.path
-        seen["account"] = dict((p.key, p.value) for p in request.params)["user_account"]
-        return {"result": 1, "ret_code": 0}
-
-    monkeypatch.setattr(Portal, "request", fake)
-    portal = make_portal()
+def test_login_passes_operator() -> None:
+    transport = FakeTransport((200, '{"result":1,"ret_code":0}'))
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP, transport=transport)
     portal.account, portal.password, portal.operator = "0814", "pw", "cmcc"
     assert portal.login().ok
-    assert seen["path"] == "/eportal/portal/login"
-    assert seen["account"] == ",0,0814@cmcc"
+    assert "/eportal/portal/login" in transport.last_url
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(transport.last_url).query)
+    encrypted = query["user_account"][0]
+    assert xor_unhex(encrypted, key_for(IP)) == ",0,0814@cmcc"
 
 
 def test_body_uses_encoder() -> None:
@@ -116,28 +111,25 @@ def test_body_uses_encoder() -> None:
     assert b"plain=10" in body  # 值同样被 xor 成 10
 
 
-def test_online_parses_rows(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        Portal,
-        "request",
-        lambda self, req: {
-            "list": [{"online_ip": IP, "user_account": "0814", "time_long": "9"}, "junk"]
-        },
-    )
-    sessions = make_portal().sessions()
+def test_online_parses_rows() -> None:
+    body = f'cb({{"list":[{{"online_ip":"{IP}","user_account":"0814","time_long":"9"}},"junk"]}})'
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP, transport=FakeTransport((200, body)))
+    sessions = portal.sessions()
     assert len(sessions) == 1
     assert sessions[0].ip == IP
     assert sessions[0].time_long == "9"
 
 
-def test_mine_matches_own_ip(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Portal, "request", lambda self, req: {"list": [{"online_ip": IP}]})
-    assert make_portal().mine() is not None
+def test_mine_matches_own_ip() -> None:
+    body = f'cb({{"list":[{{"online_ip":"{IP}"}}]}})'
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP, transport=FakeTransport((200, body)))
+    assert portal.mine() is not None
 
 
-def test_mine_ignores_other_ip(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Portal, "request", lambda self, req: {"list": [{"online_ip": "10.9.9.9"}]})
-    assert make_portal().mine() is None
+def test_mine_ignores_other_ip() -> None:
+    body = 'cb({"list":[{"online_ip":"10.9.9.9"}]})'
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP, transport=FakeTransport((200, body)))
+    assert portal.mine() is None
 
 
 def test_mine_uses_adapter_online_check() -> None:
@@ -154,99 +146,46 @@ def test_mine_uses_adapter_online_check() -> None:
     assert asserted["hit"]
 
 
-def test_logout_uses_logout_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen = {}
-
-    def fake(self, req: Request) -> dict:
-        seen["p"] = req.path
-        return {}
-
-    monkeypatch.setattr(Portal, "request", fake)
-    make_portal().logout()
-    assert seen["p"] == "/eportal/portal/logout"
+def test_logout_uses_logout_path() -> None:
+    transport = FakeTransport((200, "{}"))
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP, transport=transport)
+    portal.logout()
+    assert "/eportal/portal/logout" in transport.last_url
 
 
 # ---------- 传输重试 ----------
 
 
-class FakeResponse:
-    def __init__(self, body: str) -> None:
-        self.body = body.encode()
-
-    def read(self, _limit: int | None = None) -> bytes:
-        return self.body
-
-    def close(self) -> None:  # HTTPError 会当它是文件对象去 close
-        return None
-
-    def __enter__(self) -> FakeResponse:
-        return self
-
-    def __exit__(self, *exc) -> None:
-        return None
+def make_adaptive(mask: bool = True, transport=None, retries: int = 2) -> tuple[Portal, object]:
+    portal = Portal(HUUC, timeout=1, retries=retries, ip=IP, transport=transport)  # type: ignore[arg-type]
+    portal.mask_urls = mask
+    return portal, transport
 
 
 def test_request_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = {"n": 0}
-
-    def flaky(url, **kwargs):
-        calls["n"] += 1
-        if calls["n"] < 3:
-            raise urllib.error.URLError("boom")
-        return FakeResponse('cb({"result":1})')
-
     monkeypatch.setattr("time.sleep", lambda _: None)
-    portal = Portal(HUUC, timeout=1, retries=2, ip=IP)
-    monkeypatch.setattr(portal._opener, "open", flaky)
+    transport = FakeTransport(
+        TransportError("boom"), TransportError("boom"), (200, 'cb({"result":1})')
+    )
+    portal, _ = make_adaptive(transport=transport)
     assert portal.request(Request("/p")) == {"result": 1}
-    assert calls["n"] == 3
+    assert len(transport.calls) == 3
 
 
 def test_request_exhausts_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(url, **kwargs):
-        raise urllib.error.URLError("down")
-
     monkeypatch.setattr("time.sleep", lambda _: None)
-    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
-    monkeypatch.setattr(portal._opener, "open", boom)
+    transport = FakeTransport(TransportError("down"), TransportError("down"))
+    portal, _ = make_adaptive(transport=transport, retries=1)
     with pytest.raises(TransportError, match="请求失败"):
         portal.request(Request("/p"))
-
-
-def test_retry_delays_capped() -> None:
-    delays = list(iter_retry_delays(10, base=1, cap=8))
-    assert delays == sorted(delays)
-    assert max(delays) <= 8
-
-
-def http_error(
-    code: int, retry_after: str | None, body: str = '{"ok":1}'
-) -> urllib.error.HTTPError:
-    headers = email.message.Message()
-    if retry_after is not None:
-        headers["Retry-After"] = retry_after
-    return urllib.error.HTTPError("http://x/p", code, "boom", headers, io.BytesIO(body.encode()))
-
-
-def opener_from(monkeypatch: pytest.MonkeyPatch, portal: Portal, seq: list) -> None:
-    """按顺序回放响应；异常对象就抛出来。"""
-
-    def fake_open(*_a, **_k):
-        item = seq.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
-
-    monkeypatch.setattr(portal._opener, "open", fake_open)
+    assert len(transport.calls) == 2
 
 
 def test_retry_after_seconds_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
     slept: list[float] = []
-    seq = [http_error(429, "1"), FakeResponse('{"result":1}')]
-
     monkeypatch.setattr("time.sleep", slept.append)
-    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
-    opener_from(monkeypatch, portal, seq)
+    transport = FakeTransport((429, "{}", {"Retry-After": "1"}), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=1)
     assert portal.request(Request("/p")) == {"result": 1}
     assert slept == [pytest.approx(1.0)]
 
@@ -254,102 +193,116 @@ def test_retry_after_seconds_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_retry_after_http_date_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     """RFC 也允许日期格式；以前 float() 直接吃不下，会抛 ValueError 变成退出码 70。"""
     when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=3)
-    stamp = email.utils.format_datetime(when)
     slept: list[float] = []
-    seq = [http_error(503, stamp), FakeResponse('{"result":1}')]
-
     monkeypatch.setattr("time.sleep", slept.append)
-    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
-    opener_from(monkeypatch, portal, seq)
+    transport = FakeTransport(
+        (503, "{}", {"Retry-After": email.utils.format_datetime(when)}), (200, '{"result":1}')
+    )
+    portal, _ = make_adaptive(transport=transport, retries=1)
     assert portal.request(Request("/p")) == {"result": 1}
-    assert len(slept) == 1
     assert 1.5 < slept[0] <= 4.0
 
 
 def test_retry_after_garbage_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     slept: list[float] = []
-    seq = [http_error(429, "不久之后"), FakeResponse('{"result":1}')]
-
     monkeypatch.setattr("time.sleep", slept.append)
-    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
-    opener_from(monkeypatch, portal, seq)
+    transport = FakeTransport((429, "{}", {"Retry-After": "不久之后"}), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=1)
     portal.request(Request("/p"))
     assert slept == [pytest.approx(2.0)]
 
 
 def test_retry_after_is_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     slept: list[float] = []
-    seq = [http_error(429, "9999"), FakeResponse('{"result":1}')]
-
     monkeypatch.setattr("time.sleep", slept.append)
-    portal = Portal(HUUC, timeout=1, retries=1, ip=IP)
-    opener_from(monkeypatch, portal, seq)
+    transport = FakeTransport((429, "{}", {"Retry-After": "9999"}), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=1)
     portal.request(Request("/p"))
     assert slept == [pytest.approx(60.0)]
 
 
-def test_html_200_is_parsed_as_failure_without_retrying(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_html_200_is_parsed_as_failure_without_retrying() -> None:
     """回了个成功页 HTML 时，重发一遍也是一样的，别打三次。"""
-    calls = {"n": 0}
-
-    def fake_open(*_a, **_k):
-        calls["n"] += 1
-        return FakeResponse("<html>登录成功，欢迎</html>")
-
-    monkeypatch.setattr("time.sleep", lambda _: None)
-    portal = Portal(HUUC, timeout=1, retries=2, ip=IP)
-    monkeypatch.setattr(portal._opener, "open", fake_open)
+    transport = FakeTransport((200, "<html>登录成功，欢迎</html>"))
+    portal, _ = make_adaptive(transport=transport)
     with pytest.raises(ParseError):
         portal.request(Request("/p"))
-    assert calls["n"] == 1
+    assert len(transport.calls) == 1
 
 
 @pytest.mark.parametrize("code", [403, 500])
-def test_error_status_with_json_body_is_still_failure(
-    monkeypatch: pytest.MonkeyPatch, code: int
-) -> None:
+def test_error_status_with_json_body_is_still_failure(code: int) -> None:
     """错误页里也可能带 `{"result":0}`，不能因为含 { 就当成功。"""
-    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
-
-    def boom(*_a, **_k):
-        raise http_error(code, None)
-
-    monkeypatch.setattr(portal._opener, "open", boom)
+    transport = FakeTransport((code, '{"result":0}'))
+    portal, _ = make_adaptive(transport=transport, retries=0)
     with pytest.raises(TransportError, match=f"HTTP {code}"):
         portal.request(Request("/p"))
+
+
+def test_request_error_masks_password_by_default() -> None:
+    transport = FakeTransport(TransportError("down"))
+    portal, _ = make_adaptive(transport=transport, retries=0)
+    with pytest.raises(TransportError) as info:
+        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
+    assert "user_password=ab…gh" in str(info.value)
+
+
+def test_request_error_can_show_secrets() -> None:
+    transport = FakeTransport(TransportError("down"))
+    portal, _ = make_adaptive(mask=False, transport=transport, retries=0)
+    with pytest.raises(TransportError) as info:
+        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
+    assert "user_password=abcdefgh" in str(info.value)
 
 
 def test_mask_url_hides_password_only() -> None:
     url = (
         "https://p/eportal/portal/login?user_account=3925&user_password=66707667&wlan_user_ip=2425"
     )
-    masked = probe_module_mask(url)
+    masked = _mask_url(url)
     assert "user_password=66" in masked
     assert "66707667" not in masked
     assert "user_account=3925" in masked
     assert "wlan_user_ip=2425" in masked
 
 
-def test_request_error_masks_password_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_urllib_transport_maps_network_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """真 transport 要把 URLError 翻成 TransportError，Portal 才认。"""
+    from campus_auth.transport import UrllibTransport
+
+    transport = UrllibTransport()
+
     def boom(*_a, **_k):
-        raise urllib.error.URLError("down")
+        raise urllib.error.URLError("x")
 
-    monkeypatch.setattr("time.sleep", lambda _: None)
-    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
-    monkeypatch.setattr(portal._opener, "open", boom)
-    with pytest.raises(TransportError) as info:
-        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
-    assert "user_password=ab…gh" in str(info.value)
+    monkeypatch.setattr(transport._opener, "open", boom)
+    with pytest.raises(TransportError):
+        transport.send("http://1.2.3.4/")
 
 
-def test_request_error_can_show_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*_a, **_k):
-        raise urllib.error.URLError("down")
+def test_urllib_transport_returns_status_and_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth.transport import UrllibTransport
 
-    monkeypatch.setattr("time.sleep", lambda _: None)
-    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
-    portal.mask_urls = False
-    monkeypatch.setattr(portal._opener, "open", boom)
-    with pytest.raises(TransportError) as info:
-        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
-    assert "user_password=abcdefgh" in str(info.value)
+    class FakeResp:
+        status = 200
+        headers: dict[str, str] = {}
+
+        def read(self, _limit: int = 0) -> bytes:
+            return b'{"ok":1}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            return None
+
+    transport = UrllibTransport()
+    monkeypatch.setattr(transport._opener, "open", lambda *_a, **_k: FakeResp())
+    response = transport.send("http://1.2.3.4/")
+    assert response.status == 200 and response.text == '{"ok":1}'
+
+
+def test_retry_delays_capped() -> None:
+    delays = list(iter_retry_delays(10, base=1, cap=8))
+    assert delays == sorted(delays)
+    assert max(delays) <= 8

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from fake_transport import patch_send
 
 from campus_auth import cli, net
 from campus_auth.portal import Portal
@@ -28,20 +29,21 @@ def campus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def fake_portal(monkeypatch: pytest.MonkeyPatch, *, online_after_login: bool = True) -> dict:
-    """把 Portal.get 换成有状态的假实现。"""
+    """在 transport 层打桩：URL 拼接、编码、解析全走真的。"""
     state = {"online": False, "logins": 0, "calls": []}
 
-    def fake_request(self: Portal, request):
-        state["calls"].append(request.path)
-        if request.path.endswith("online_list"):
-            return {"list": [{"online_ip": IP, "user_account": "0814"}] if state["online"] else []}
-        if request.path.endswith("login"):
+    def handler(url: str, _data):
+        state["calls"].append(url)
+        if "online_list" in url:
+            rows = [{"online_ip": IP, "user_account": "0814"}] if state["online"] else []
+            return (200, f'cb({{"list": {json.dumps(rows)}}})')
+        if "portal/login" in url:
             state["logins"] += 1
             state["online"] = online_after_login
-            return {"result": 1, "ret_code": 0, "msg": "认证成功"}
-        return {"result": 1, "msg": "ok"}
+            return (200, 'cb({"result":1,"ret_code":0,"msg":"认证成功"})')
+        return (200, '{"result":1,"msg":"ok"}')
 
-    monkeypatch.setattr(Portal, "request", fake_request)
+    patch_send(monkeypatch, handler)
     return state
 
 
@@ -134,12 +136,12 @@ def test_login_already_online_skips(campus: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_login_rejected(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    def fake_request(self, request):
-        if request.path.endswith("online_list"):
-            return {"list": []}
-        return {"result": 1, "ret_code": 1, "msg": "unbind isp uid"}
+    def handler(url: str, _data):
+        if "online_list" in url:
+            return (200, 'cb({"list":[]})')
+        return (200, '{"result":1,"ret_code":1,"msg":"unbind isp uid"}')
 
-    monkeypatch.setattr(Portal, "request", fake_request)
+    patch_send(monkeypatch, handler)
     monkeypatch.setattr("time.sleep", lambda _: None)
     assert run(["login", "-a", "1", "-p", "p"]) == 1
     out = capsys.readouterr().out
@@ -214,15 +216,15 @@ def test_logout_and_unbind(campus: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_unbind_uses_mac_unbind_path(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     seen: dict[str, object] = {}
 
-    def fake_request(self: Portal, request):
-        seen["path"] = request.path
-        seen["method"] = request.method
-        return {"result": 1, "ret_code": 0, "msg": "解绑成功"}
+    def handler(url: str, data):
+        seen["url"] = url
+        seen["data"] = data
+        return (200, '{"result":1,"ret_code":0,"msg":"解绑成功"}')
 
-    monkeypatch.setattr(Portal, "request", fake_request)
+    patch_send(monkeypatch, handler)
     assert run(["unbind", "-a", "0814"]) == 0
-    assert str(seen["path"]).endswith("/eportal/portal/mac/unbind")
-    assert seen["method"] == "GET"
+    assert "/eportal/portal/mac/unbind" in str(seen["url"])
+    assert seen["data"] is None  # 解绑是 GET
     assert "解绑成功" in capsys.readouterr().out
 
 
@@ -344,10 +346,7 @@ def test_unbind_transport_error_prints_hint(
     """门户回 HTML 时别再甩 200 字符原文，给一句人话。"""
     from campus_auth.errors import TransportError
 
-    def boom(self: Portal, request):
-        raise TransportError("响应里没有可解析的 JSON 对象: '<!doctype html>...'")
-
-    monkeypatch.setattr(Portal, "request", boom)
+    patch_send(monkeypatch, lambda _url, _data: TransportError("没有可解析的 JSON"))
     assert run(["unbind", "-a", "0814"]) == 4
     out = capsys.readouterr().out
     assert "解绑失败" in out
@@ -404,8 +403,8 @@ def test_status_marks_foreign_session_on_my_ip(
     campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     fake_portal(monkeypatch)
-    foreign = {"list": [{"online_ip": IP, "user_account": "别人的号"}]}
-    monkeypatch.setattr(Portal, "request", lambda self, req: foreign)
+    foreign = f'cb({{"list":[{{"online_ip":"{IP}","user_account":"别人的号"}}]}})'
+    patch_send(monkeypatch, lambda _url, _data: (200, foreign))
     assert run(["status"]) == 1
     out = capsys.readouterr().out
     assert "（别人）" in out
@@ -414,8 +413,8 @@ def test_status_marks_foreign_session_on_my_ip(
 
 def test_status_marks_my_session(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     fake_portal(monkeypatch)
-    own = {"list": [{"online_ip": IP, "user_account": "0814"}]}
-    monkeypatch.setattr(Portal, "request", lambda self, req: own)
+    own = f'cb({{"list":[{{"online_ip":"{IP}","user_account":"0814"}}]}})'
+    patch_send(monkeypatch, lambda _url, _data: (200, own))
     assert run(["status"]) == 0
     assert "（你）" in capsys.readouterr().out
 
@@ -427,15 +426,15 @@ def test_login_is_not_skipped_when_ip_has_a_foreign_session(
     state["online"] = True
     ours = {"now": False}
 
-    def fake_request(self: Portal, req):
-        if req.path.endswith("online_list"):
+    def handler(url: str, _data):
+        if "online_list" in url:
             account = "0814" if ours["now"] else "别人的号"
-            return {"list": [{"online_ip": IP, "user_account": account}]}
+            return (200, f'cb({{"list":[{{"online_ip":"{IP}","user_account":"{account}"}}]}})')
         ours["now"] = True
         state["logins"] += 1
-        return {"result": 1, "ret_code": 0, "msg": "认证成功"}
+        return (200, '{"result":1,"ret_code":0,"msg":"认证成功"}')
 
-    monkeypatch.setattr(Portal, "request", fake_request)
+    patch_send(monkeypatch, handler)
     assert run(["login", "-a", "0814", "-p", "pw"]) == 0
     assert state["logins"] == 1
 
@@ -446,20 +445,13 @@ def test_login_is_not_skipped_when_ip_has_a_foreign_session(
 def test_check_maps_transport_error_to_4(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from campus_auth.errors import TransportError
 
-    def boom(self: Portal, request):
-        raise TransportError("超时")
-
-    monkeypatch.setattr(Portal, "request", boom)
+    patch_send(monkeypatch, lambda _url, _data: TransportError("超时"))
     assert run(["check", "-q"]) == 4
 
 
 def test_check_maps_parse_error_to_1(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from campus_auth.errors import ParseError
 
-    def boom(self: Portal, request):
-        raise ParseError("回的是 HTML")
-
-    monkeypatch.setattr(Portal, "request", boom)
+    patch_send(monkeypatch, lambda _url, _data: (200, "<html>改版了</html>"))
     assert run(["check", "-q"]) == 1
 
 
@@ -497,21 +489,13 @@ def test_urls_warn_about_password_in_shortcuts(
     assert "等于给出密码" in capsys.readouterr().out
 
 
-def test_show_secrets_turns_off_masking(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from campus_auth.errors import TransportError
+def test_show_secrets_turns_off_masking(campus: Path) -> None:
+    from campus_auth import commands
+    from campus_auth.cli import _parser
 
-    seen: dict[str, bool] = {}
-
-    def boom(self: Portal, request):
-        seen["mask"] = self.mask_urls
-        raise TransportError("请求失败")
-
-    monkeypatch.setattr(Portal, "request", boom)
-    run(["login", "-a", "0814", "-p", "abcd1234"])
-    assert seen["mask"] is True
-
-    run(["--show-secrets", "login", "-a", "0814", "-p", "abcd1234"])
-    assert seen["mask"] is False
+    assert commands._config(_parser().parse_args(["status"])).mask_urls is True
+    args = _parser().parse_args(["--show-secrets", "status"])
+    assert commands._config(args).mask_urls is False
 
 
 def test_install_requires_account(campus: Path, capsys) -> None:
@@ -519,3 +503,16 @@ def test_install_requires_account(campus: Path, capsys) -> None:
     bare.write_text('adapter = "huuc"\n', encoding="utf-8")
     assert run(["install", "--config", str(bare)]) == 2
     assert "account" in capsys.readouterr().err
+
+
+def test_status_json_keeps_any_online_for_old_scripts(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """1.0 起 online 只说“你自己在线”；旧脚本要的“门户里有人”改看 any_online。"""
+    fake_portal(monkeypatch)
+    body = f'cb({{"list":[{{"online_ip":"{IP}","user_account":"别人的号"}}]}})'
+    patch_send(monkeypatch, lambda _url, _data: (200, body))
+    assert run(["status", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["online"] is False
+    assert payload["any_online"] is True

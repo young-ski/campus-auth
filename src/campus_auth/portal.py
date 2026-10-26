@@ -9,27 +9,20 @@ TLS 1.0 + SHA1（所以要把 SECLEVEL 降到 0）。
 
 from __future__ import annotations
 
-import contextlib
 import datetime
 import email.utils
-import http.cookiejar
 import json
 import random
 import re
 import ssl
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import NoReturn
 
 from .adapters.base import Adapter, LoginResult, Request
 from .errors import ParseError, TransportError
-
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth"
-
+from .transport import USER_AGENT, Transport, UrllibTransport
 
 _SECRET_PARAM = re.compile(r"(user_password|password)=([^&\s]{1,80})")
 
@@ -66,16 +59,6 @@ def _retry_after(value: str | None, fallback: float) -> float:
     if delay is None:
         return fallback
     return min(60.0, max(0.5, delay))
-
-
-def _ssl_context(verify: bool) -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    if not verify:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-    with contextlib.suppress(ssl.SSLError):  # 个别 OpenSSL 构建没有该级别
-        ctx.set_ciphers("DEFAULT@SECLEVEL=0")
-    return ctx
 
 
 def extract_json(body: str) -> dict[str, object]:
@@ -140,6 +123,7 @@ class Portal:
         password: str = "",
         operator: str = "none",
         mask_urls: bool = True,
+        transport: Transport | None = None,
     ) -> None:
         adapter.check()
         self.adapter = adapter
@@ -155,9 +139,7 @@ class Portal:
         self.ctx: dict[str, object] = {}
         self.last_url = ""
         self.mask_urls = mask_urls
-        self._ctx_tls = _ssl_context(self.verify_tls)
-        self._jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._jar))
+        self.transport: Transport = transport or UrllibTransport(verify_tls=self.verify_tls)
 
     # ---------- 传输 ----------
 
@@ -188,19 +170,10 @@ class Portal:
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                req = urllib.request.Request(url, data=data, headers=headers)
-                with self._opener.open(req, timeout=self.timeout) as resp:
-                    body = resp.read().decode("utf-8", "replace")
-                return extract_json(body)
-            except urllib.error.HTTPError as exc:
-                body = exc.read().decode("utf-8", "replace")
-                if exc.code in (429, 503) and attempt < self.retries:
-                    delay = _retry_after(exc.headers.get("Retry-After"), 2.0 * (attempt + 1))
-                    time.sleep(delay)
-                    continue
-                # 4xx/5xx 一律算失败：错误页里也可能带个 `{"result":0}`，别当成功
-                _raise_http(exc, body)
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                response = self.transport.send(
+                    url, data=data, headers=headers, timeout=self.timeout
+                )
+            except TransportError as exc:
                 last = exc
                 if attempt < self.retries:
                     time.sleep(1.5 * (attempt + 1) + random.random())
@@ -213,6 +186,15 @@ class Portal:
                 raise TransportError(
                     f"请求失败，已重试 {self.retries} 次{hint}\n{self.last_url}\n{last}"
                 ) from exc
+            if response.status in (429, 503) and attempt < self.retries:
+                time.sleep(_retry_after(response.headers.get("Retry-After"), 2.0 * (attempt + 1)))
+                continue
+            if response.status >= 400:
+                # 4xx/5xx 一律算失败：错误页里也可能带个 `{"result":0}`，别当成功
+                raise TransportError(
+                    f"HTTP {response.status} {response.text[:200]!r}\n{self.last_url}"
+                )
+            return extract_json(response.text)
         raise TransportError(f"请求失败（已重试 {self.retries} 次）: {self.last_url}\n{last}")
 
     def raw(
@@ -228,19 +210,14 @@ class Portal:
 
         给"探页面 / 看 204"这类动作留着，适配层的 discover 用得上。
         """
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={"User-Agent": USER_AGENT, **dict(headers or {})},
-            method=method,
-        )
+        shown = _mask_url(url) if self.mask_urls else url
         try:
-            with self._opener.open(req, timeout=timeout or self.timeout) as resp:
-                return resp.status, resp.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise TransportError(f"请求失败: {url}\n{exc}") from exc
+            response = self.transport.send(
+                url, data=body, headers=headers, timeout=timeout or self.timeout
+            )
+            return response.status, response.text
+        except TransportError as exc:
+            raise TransportError(f"请求失败: {shown}\n{exc}") from exc
 
     # ---------- 动作 ----------
 
@@ -288,10 +265,6 @@ class Portal:
         if not self.ctx:
             self.prepare()
         return self.request(self.adapter.unbind_request(self))
-
-
-def _raise_http(exc: urllib.error.HTTPError, body: str) -> NoReturn:
-    raise TransportError(f"HTTP {exc.code} {exc.reason}: {body[:200]!r}") from exc
 
 
 def iter_retry_delays(attempts: int, base: float = 1.5, cap: float = 60.0) -> Iterator[float]:

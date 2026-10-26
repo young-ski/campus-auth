@@ -2,6 +2,14 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 未发布
+
+### 变更
+
+- 抽出 `transport.py`：cookie、TLS 放宽、UA、状态码都收在一处，`Portal` 与探针共用；
+  测试改为注入假 transport，不再 patch `Portal.request`
+- `status --json` 加 `any_online`（门户里任何人），`online` 仍表示“你自己在线”
+
 ## 1.0.0
 
 首个正式版本，也是第一个 PyPI 版本。

@@ -167,7 +167,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     if args.json:
         _dump(
             {
-                "online": bool(mine),
+                "online": bool(mine),  # 你自己的会话（1.0 起）
+                "any_online": bool(sessions),  # 门户里任何会话，含别人的
                 "ip": ctx.ip,
                 "account": config.account,
                 "sessions": [{**s.raw, "ours": s in mine} for s in sessions],

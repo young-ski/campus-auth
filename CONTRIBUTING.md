@@ -27,6 +27,25 @@
 - 提交前 `ruff check . && ruff format . && pytest` 必须全绿（CI 会跑同一套）。
 - 退出码是公开接口，改动要同步 README 的表和 `CHANGELOG.md`。
 
+## 发布（维护者）
+
+只走 tag：`pyproject.toml` 的版本和 tag 必须一致（workflow 会校验），push tag 后
+`publish.yml` 自动 build、`twine check`、用 PyPI 可信发布上传，不需要 token。
+
+首次需要有人在 PyPI 注册可信发布者：
+
+- Owner `young-ski`、Repository `campus-auth`、Workflow `publish.yml`、Environment `pypi`
+
+没注册之前 publish 作业会在上传一步失败（build 与检查仍然会过），把流水线里的
+troubleshooting 链接给管理员看即可。
+
+```bash
+# 1. 改 pyproject 与 __init__ 的版本  2. 写 CHANGELOG
+git commit -am "chore: x.y.z"
+git push
+gh release create vx.y.z dist/campus-auth.pyz --title vx.y.z --notes "…"
+```
+
 ## 报 bug
 
 请附上：适配层名、Python 版本、`campus-auth --version`、退出码、`campus-auth probe --json`

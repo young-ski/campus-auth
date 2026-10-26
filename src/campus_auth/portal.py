@@ -15,6 +15,7 @@ import email.utils
 import http.cookiejar
 import json
 import random
+import re
 import ssl
 import time
 import urllib.error
@@ -28,6 +29,21 @@ from .adapters.base import Adapter, LoginResult, Request
 from .errors import ParseError, TransportError
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) campus-auth"
+
+
+_SECRET_PARAM = re.compile(r"(user_password|password)=([^&\s]{1,80})")
+
+
+def _mask_url(url: str) -> str:
+    """把 URL 里的密码值打掉。Dr.COM 的密文密钥就是同 URL 里的 IP，等于明文。"""
+
+    def repl(match: re.Match[str]) -> str:
+        value = match.group(2)
+        if len(value) <= 4:
+            return f"{match.group(1)}={value}"
+        return f"{match.group(1)}={value[:2]}…{value[-2:]}"
+
+    return _SECRET_PARAM.sub(repl, url)
 
 
 def _retry_after(value: str | None, fallback: float) -> float:
@@ -123,6 +139,7 @@ class Portal:
         account: str = "",
         password: str = "",
         operator: str = "none",
+        mask_urls: bool = True,
     ) -> None:
         adapter.check()
         self.adapter = adapter
@@ -137,6 +154,7 @@ class Portal:
         self.operator = operator
         self.ctx: dict[str, object] = {}
         self.last_url = ""
+        self.mask_urls = mask_urls
         self._ctx_tls = _ssl_context(self.verify_tls)
         self._jar = http.cookiejar.CookieJar()
         self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._jar))
@@ -161,7 +179,7 @@ class Portal:
 
     def request(self, request: Request) -> dict[str, object]:
         url = self.build_url(request)
-        self.last_url = url
+        self.last_url = _mask_url(url) if self.mask_urls else url
         data = self._body(request) if request.method.upper() == "POST" else None
         headers = {"User-Agent": USER_AGENT, **request.headers}
         if data is not None:

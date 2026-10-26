@@ -48,6 +48,9 @@ def _parser() -> argparse.ArgumentParser:
         epilog="适配层用 --adapter 选，内置: " + ", ".join(adapters.names()),
     )
     parser.add_argument("--version", action="version", version=f"campus-auth {__version__}")
+    parser.add_argument(
+        "--show-secrets", action="store_true", help="报错里的密码不打码（默认打码）"
+    )
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", help="配置文件路径")
     common.add_argument("--adapter", help="适配层名，或 module:attr")

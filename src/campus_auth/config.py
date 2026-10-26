@@ -55,6 +55,7 @@ class Config:
     interval: float = 120.0
     jitter: float = 0.3
     probe_host: str = "www.baidu.com"
+    mask_urls: bool = True
 
     def validate(self, need_password: bool = True) -> None:
         missing = []

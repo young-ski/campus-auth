@@ -13,6 +13,7 @@ from campus_auth.adapters.huuc import ADAPTER as HUUC
 from campus_auth.crypto import xor_unhex
 from campus_auth.errors import ParseError, TransportError
 from campus_auth.portal import Portal, extract_json, iter_retry_delays
+from campus_auth.portal import _mask_url as probe_module_mask
 
 IP = "10.152.59.163"
 
@@ -316,3 +317,39 @@ def test_error_status_with_json_body_is_still_failure(
     monkeypatch.setattr(portal._opener, "open", boom)
     with pytest.raises(TransportError, match=f"HTTP {code}"):
         portal.request(Request("/p"))
+
+
+def test_mask_url_hides_password_only() -> None:
+    url = (
+        "https://p/eportal/portal/login?user_account=3925&user_password=66707667&wlan_user_ip=2425"
+    )
+    masked = probe_module_mask(url)
+    assert "user_password=66" in masked
+    assert "66707667" not in masked
+    assert "user_account=3925" in masked
+    assert "wlan_user_ip=2425" in masked
+
+
+def test_request_error_masks_password_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_a, **_k):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
+    monkeypatch.setattr(portal._opener, "open", boom)
+    with pytest.raises(TransportError) as info:
+        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
+    assert "user_password=ab…gh" in str(info.value)
+
+
+def test_request_error_can_show_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_a, **_k):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    portal = Portal(HUUC, timeout=1, retries=0, ip=IP)
+    portal.mask_urls = False
+    monkeypatch.setattr(portal._opener, "open", boom)
+    with pytest.raises(TransportError) as info:
+        portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
+    assert "user_password=abcdefgh" in str(info.value)

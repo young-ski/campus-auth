@@ -487,3 +487,28 @@ def test_other_oserror_still_crashes(campus: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(cli, "cmd_adapters", boom)
     assert cli.main(["adapters"]) == 70
+
+
+def test_urls_warn_about_password_in_shortcuts(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake_portal(monkeypatch)
+    assert run(["urls", "-a", "1", "-p", "p", "-o", "out"]) == 0
+    assert "等于给出密码" in capsys.readouterr().out
+
+
+def test_show_secrets_turns_off_masking(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth.errors import TransportError
+
+    seen: dict[str, bool] = {}
+
+    def boom(self: Portal, request):
+        seen["mask"] = self.mask_urls
+        raise TransportError("请求失败")
+
+    monkeypatch.setattr(Portal, "request", boom)
+    run(["login", "-a", "0814", "-p", "abcd1234"])
+    assert seen["mask"] is True
+
+    run(["--show-secrets", "login", "-a", "0814", "-p", "abcd1234"])
+    assert seen["mask"] is False

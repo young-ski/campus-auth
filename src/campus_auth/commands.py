@@ -431,6 +431,7 @@ def cmd_urls(args: argparse.Namespace) -> int:
             "点开会是错误页 —— 用 login 命令。"
         )
     _say("注意：URL 里绑着当前 IP 和一次性 challenge，换网段或过期就得重生成。")
+    _say("! 快捷方式里的密码是密文，但密钥（IP）就在同一个 URL 里 —— 分享 .url 等于给出密码。")
     return EXIT_OK
 
 
@@ -540,6 +541,8 @@ def _config(args: argparse.Namespace) -> Config:
         overrides["password"] = args.password
     if args.verify_tls:
         overrides["verify_tls"] = True
+    if args.show_secrets:
+        overrides["mask_urls"] = False
     return load(args.config, overrides)
 
 

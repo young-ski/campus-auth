@@ -96,6 +96,12 @@ pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
 
 默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
+PyPI 上还没有发布时，用 git 的 tag 装同一条：
+
+```bash
+pip install "campus-auth[keyring] @ git+https://github.com/young-ski/campus-auth@v1.0.0"
+```
+
 没有 pip 的机器用单文件：从 Releases 下 `campus-auth.pyz`，`python campus-auth.pyz status`。
 
 ## 配置

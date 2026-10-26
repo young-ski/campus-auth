@@ -484,6 +484,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
 def cmd_install(args: argparse.Namespace) -> int:
     config = _config(args)
+    config.validate(need_password=False)  # 没账号装上也不会成功
     path = find_config_file(args.config)
     if path is None:
         _say("! 没找到配置文件：自启要一个真实路径，先 `campus-auth init` 或 --config 指一个")

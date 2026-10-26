@@ -512,3 +512,10 @@ def test_show_secrets_turns_off_masking(campus: Path, monkeypatch: pytest.Monkey
 
     run(["--show-secrets", "login", "-a", "0814", "-p", "abcd1234"])
     assert seen["mask"] is False
+
+
+def test_install_requires_account(campus: Path, capsys) -> None:
+    bare = campus / "noacct.toml"
+    bare.write_text('adapter = "huuc"\n', encoding="utf-8")
+    assert run(["install", "--config", str(bare)]) == 2
+    assert "account" in capsys.readouterr().err

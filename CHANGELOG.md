@@ -11,7 +11,7 @@
 **破坏性**（相对 0.9.x）：`status` 需要填了 account 才有意义、会区分“你”与“别人”；
 `probe` 对锐捷/深澜只说“暂不支持”；`install` 之前先校验配置；报错里的密码默认打码。
 
-发布走 tag 触发的 PyPI 可信发布（`.github/workflows/publish.yml`）。
+已发布到 PyPI（`pip install campus-auth`），发布走 tag 触发的可信发布流水线。
 
 ## 0.10.4
 

@@ -1,5 +1,9 @@
 # campus-auth
 
+[![PyPI](https://img.shields.io/pypi/v/campus-auth)](https://pypi.org/project/campus-auth/)
+[![Python](https://img.shields.io/pypi/pyversions/campus-auth)](https://pypi.org/project/campus-auth/)
+[![CI](https://github.com/young-ski/campus-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/young-ski/campus-auth/actions/workflows/ci.yml)
+
 **Dr.COM / eportal 校园网门户认证客户端。** 一行命令登录，断线自动重连。密钥算法、参数名、
 运营商后缀全部收在工具里，你不用再点一个 IP 一变就失效的快捷方式。
 
@@ -96,10 +100,10 @@ pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
 
 默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
-PyPI 上还没有发布时，用 git 的 tag 装同一条：
+想跟未发布的主干，也可以装 git：
 
 ```bash
-pip install "campus-auth[keyring] @ git+https://github.com/young-ski/campus-auth@v1.0.0"
+pip install "campus-auth @ git+https://github.com/young-ski/campus-auth"
 ```
 
 没有 pip 的机器用单文件：从 Releases 下 `campus-auth.pyz`，`python campus-auth.pyz status`。

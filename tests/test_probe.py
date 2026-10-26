@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from fake_transport import DictTransport
 
-from campus_auth import cli, commands, probe
+from campus_auth import cli, probe
+from campus_auth.commands import scan
 from campus_auth.errors import TransportError
 from campus_auth.probe import Analysis, Signal, analyze, to_json
 
@@ -131,7 +132,7 @@ def campus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def fake_probe(monkeypatch: pytest.MonkeyPatch, analysis: Analysis) -> None:
-    monkeypatch.setattr(commands, "probe", lambda url, **kw: (analysis, url))
+    monkeypatch.setattr(scan, "probe", lambda url, **kw: (analysis, url))
 
 
 def test_probe_success(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
@@ -159,7 +160,7 @@ def test_probe_offline(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) ->
     def boom(url, **kw):
         raise TransportError("一条探针都没通")
 
-    monkeypatch.setattr(commands, "probe", boom)
+    monkeypatch.setattr(scan, "probe", boom)
     assert cli.main(["probe", "--url", "http://10.0.0.1"]) == 3
     out = capsys.readouterr()
     assert "校园网内" in out.err + out.out
@@ -172,7 +173,7 @@ def test_probe_uses_adapter_url(campus: Path, monkeypatch: pytest.MonkeyPatch) -
         seen["url"] = url
         return analyze(DRCOM_SAMPLES), url
 
-    monkeypatch.setattr(commands, "probe", grab)
+    monkeypatch.setattr(scan, "probe", grab)
     cli.main(["probe"])
     assert seen["url"] == "https://netauth.huuc.edu.cn:802"
 

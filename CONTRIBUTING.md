@@ -22,7 +22,7 @@
 
 ## 约定
 
-- 核心（`portal.py` / `commands.py` / `config.py`）里出现 `if adapter == "xx"` 就算错。
+- 核心（`portal.py` / `transport.py` / `commands/` / `config.py`）里出现 `if adapter == "xx"` 就算错。
 - 新的用户可见字符串写中文，代码注释也写中文，但标识符保持英文。
 - 提交前 `ruff check . && ruff format . && pytest` 必须全绿（CI 会跑同一套）。
 - 退出码是公开接口，改动要同步 README 的表和 `CHANGELOG.md`。

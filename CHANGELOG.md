@@ -9,6 +9,8 @@
 - 抽出 `transport.py`：cookie、TLS 放宽、UA、状态码都收在一处，`Portal` 与探针共用；
   测试改为注入假 transport，不再 patch `Portal.request`
 - `status --json` 加 `any_online`（门户里任何人），`online` 仍表示“你自己在线”
+- `commands.py` 拆成 `commands/` 包（auth / account / scan / admin / watch + 公用 `_common`），
+  最大的模块 180 行
 
 ## 1.0.0
 

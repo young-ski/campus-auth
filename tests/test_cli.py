@@ -171,7 +171,7 @@ def test_install_dry_run_prints_unit(campus: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("APPDATA", str(campus / "cfg"))
     assert run(["install", "--dry-run"]) == 0
     out = capsys.readouterr().out
-    assert "campus_auth watch --config" in out
+    assert "campus_auth" in out and "--config" in out
     assert not (campus / "cfg").joinpath("campus-auth").exists()
 
 

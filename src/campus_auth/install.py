@@ -18,6 +18,7 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from .errors import ConfigError
 
@@ -68,7 +69,7 @@ def _state_home(platform: str) -> Path:
     return Path.home() / ".local" / "state" / "campus-auth"
 
 
-def _watch_command(python: str, config_path: Path) -> list[str]:
+def _watch_command(python: str, config_path: Path, platform: str) -> list[str]:
     # -u：输出进日志时要立刻落盘；--log 自己按大小轮转，别靠 shell 的 >>
     return [
         python,
@@ -79,12 +80,36 @@ def _watch_command(python: str, config_path: Path) -> list[str]:
         "--config",
         str(config_path),
         "--log",
-        str(_state_home(sys.platform) / "watch.log"),
+        str(_state_home(platform) / "watch.log"),
     ]
 
 
-def _argv_line(command: Sequence[str]) -> str:
-    return " ".join(f'"{part}"' if " " in part else part for part in command)
+def _cmd_line(command: Sequence[str]) -> str:
+    """cmd.exe 的命令行。
+
+    一律加引号（`&`、`|`、`<`、`>`、空格在引号里就是字面量），`%` 在引号里仍会展开，
+    所以还要写成 `%%`。
+    """
+    return " ".join(f'"{part.replace("%", "%%")}"' for part in command)
+
+
+def _unit_line(command: Sequence[str]) -> str:
+    r"""systemd 的 ExecStart。
+
+    `%` 是 unit specifier，无论加不加引号都要写成 `%%`；含空格的参数用引号，
+    引号内的 `\` 与 `"` 按 systemd 规则转义。
+    """
+    parts = []
+    for part in command:
+        part = part.replace("%", "%%")
+        if " " in part or "	" in part:
+            part = '"' + part.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        parts.append(part)
+    return " ".join(parts)
+
+
+def _xml(text: str) -> str:
+    return escape(str(text))
 
 
 def service_for(
@@ -97,7 +122,7 @@ def service_for(
     platform = platform or sys.platform
     python = python or sys.executable
     config_path = config_path or _config_home(platform) / "campus-auth.toml"
-    command = _watch_command(python, config_path)
+    command = _watch_command(python, config_path, platform)
 
     if platform == "win32":
         return _windows(command, platform)
@@ -105,7 +130,7 @@ def service_for(
         return _systemd(command, platform)
     if platform == "darwin":
         return _launchd(command, platform)
-    raise ConfigError(f"还不认识 {platform} 的计划任务，照 `{_argv_line(command)}` 自己配一个")
+    raise ConfigError(f"还不认识 {platform} 的计划任务，照 `{_cmd_line(command)}` 自己配一个")
 
 
 def _windows(command: list[str], platform: str) -> Service:
@@ -121,7 +146,7 @@ def _windows(command: list[str], platform: str) -> Service:
             "rem 由 `campus-auth install` 生成，改配置前先 uninstall",
             # Run 键只在登录时拉起一次，没有守护进程：崩了就等半分钟再来
             ":loop",
-            _argv_line(command),
+            _cmd_line(command),
             "ping -n 31 127.0.0.1 >nul",
             "goto loop",
             "",
@@ -152,7 +177,7 @@ def _systemd(command: list[str], platform: str) -> Service:
         "",
         "[Service]",
         "Type=simple",
-        f"ExecStart={_argv_line(command)}",
+        f"ExecStart={_unit_line(command)}",
         "Environment=PYTHONIOENCODING=utf-8",
         "Restart=always",
         "RestartSec=30",
@@ -184,7 +209,7 @@ def _systemd(command: list[str], platform: str) -> Service:
 def _launchd(command: list[str], platform: str) -> Service:
     plist = Path.home() / "Library" / "LaunchAgents" / PLIST_NAME
     log = _state_home(platform) / "watch.log"
-    args = "".join(f"\n        <string>{part}</string>" for part in command)
+    args = "".join(f"\n        <string>{_xml(str(part))}</string>" for part in command)
     content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

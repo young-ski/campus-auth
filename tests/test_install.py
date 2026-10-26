@@ -25,10 +25,11 @@ def test_systemd_unit_shape(tmp_path: Path) -> None:
     assert service.path.name == "campus-auth-watch.service"
     # systemd 只扫 $XDG_CONFIG_HOME/systemd/user，多套一层 campus-auth/ 就找不到
     assert service.path == tmp_path / "cfg" / "systemd" / "user" / "campus-auth-watch.service"
-    # 带空格的路径要加引号，否则 systemd 会拆错
-    assert f'ExecStart=/usr/bin/python3 -u -m campus_auth watch --config "{config}"' in (
-        service.content
-    )
+    # 带空格要引号、`%` 要写成 `%%`、引号内反斜杠要转义
+    exec_line = next(x for x in service.content.splitlines() if x.startswith("ExecStart"))
+    assert exec_line.startswith("ExecStart=/usr/bin/python3 -u -m campus_auth watch --config ")
+    assert install._unit_line([str(config)]) in exec_line
+    assert '"' in exec_line
     assert "Restart=always" in service.content
     assert service.log_path.as_posix().endswith("state/campus-auth/watch.log")
     assert service.remove[0] == ["systemctl", "--user", "disable", "--now", service.path.name]
@@ -121,3 +122,29 @@ def test_check_python_failure_is_actionable(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="import 不到 campus_auth"):
         install.check_python("/usr/bin/python3", run=fail)
+
+
+HOSTILE = Path("C:/a&b/100% x/c.toml")
+
+
+def test_windows_quotes_every_arg_and_escapes_percent() -> None:
+    service = install.service_for(HOSTILE, python="C:/py thon/python.exe", platform="win32")
+    line = next(x for x in service.content.splitlines() if "campus_auth" in x)
+    assert line.startswith('"C:/py thon/python.exe"')
+    assert "100%% x" in line
+    assert f'"{str(HOSTILE).replace("%", "%%")}"' in line
+
+
+def test_systemd_escapes_percent_and_quotes_spaces() -> None:
+    service = install.service_for(HOSTILE, python="/opt/py thon/python3", platform="linux")
+    exec_line = next(x for x in service.content.splitlines() if x.startswith("ExecStart"))
+    assert "100%% x" in exec_line
+    assert '"/opt/py thon/python3"' in exec_line
+
+
+def test_launchd_plist_is_valid_xml() -> None:
+    import xml.etree.ElementTree as ET
+
+    service = install.service_for(HOSTILE, platform="darwin")
+    ET.fromstring(service.content)
+    assert "a&amp;b" in service.content

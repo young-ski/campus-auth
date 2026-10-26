@@ -2,6 +2,15 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 0.10.3
+
+### 修复
+
+- 安装路径含 `&`（Windows `.cmd`）、`%`（systemd unit）、`&`（launchd plist）时自启会静默失效：
+  现在 `.cmd` 一律加引号并把 `%` 写成 `%%`，unit 把 `%` 写成 `%%`、带空格的参数加引号，
+  plist 走 XML 转义
+- CI 增加 `tools/check_install_artifacts.py`（三平台产物转义自检）与 `install --dry-run` 冒烟
+
 ## 0.10.2
 
 ### 修复

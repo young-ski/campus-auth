@@ -71,3 +71,9 @@ jobs:
         run: |
           python -m zipapp src -m campus_auth.cli:main -o /tmp/campus-auth.pyz
           python /tmp/campus-auth.pyz adapters
+      - name: install 产物的转义自检
+        run: python tools/check_install_artifacts.py
+      - name: install --dry-run 能给出产物
+        run: |
+          campus-auth install --config /tmp/x.toml --dry-run | tee /tmp/dry.txt
+          grep -q 'campus_auth' /tmp/dry.txt

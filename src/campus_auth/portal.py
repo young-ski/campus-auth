@@ -138,6 +138,7 @@ class Portal:
         self.operator = operator
         self.ctx: dict[str, object] = {}
         self.last_url = ""
+        self.last_attempts = 0  # 上一次请求实际打了几次（含重试）
         self.mask_urls = mask_urls
         self.transport: Transport = transport or UrllibTransport(verify_tls=self.verify_tls)
 
@@ -169,6 +170,7 @@ class Portal:
 
         last: Exception | None = None
         for attempt in range(self.retries + 1):
+            self.last_attempts = attempt + 1
             try:
                 response = self.transport.send(
                     url, data=data, headers=headers, timeout=self.timeout

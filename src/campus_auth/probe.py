@@ -244,6 +244,7 @@ def collect(
     verify: bool = False,
     transport: Transport | None = None,
     follow: bool = True,
+    info: dict[str, object] | None = None,
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
 
@@ -293,9 +294,12 @@ def collect(
     # 跟不跟由调用方决定（--no-follow），一跳为止。
     captive = _CAPTIVE.search(samples.get("body", "")) if follow else None
     if captive:
-        page = _absorb(captive.group(1), fetch, js_chunks)
+        target = captive.group(1)
+        page = _absorb(target, fetch, js_chunks)
         if page:
             samples["body"] = samples.get("body", "") + "\n" + page
+            if info is not None:
+                info["followed"] = target
 
     if not ok:
         raise TransportError(f"{base_url} 一条探针都没通 —— 多半不在校园网内，或端口/协议写错了")
@@ -313,10 +317,16 @@ def probe(
     transport: Transport | None = None,
     follow: bool = True,
 ) -> tuple[Analysis, str]:
+    info: dict[str, object] = {}
     samples, server, port = collect(
-        base_url, timeout=timeout, verify=verify, transport=transport, follow=follow
+        base_url, timeout=timeout, verify=verify, transport=transport, follow=follow, info=info
     )
-    return analyze(samples, server=server, port=port), base_url
+    analysis = analyze(samples, server=server, port=port)
+    followed = info.get("followed")
+    if followed:
+        host = urllib.parse.urlsplit(str(followed)).hostname or ""
+        analysis.notes.append(f"跟着劫持跳转到了 {host}")
+    return analysis, base_url
 
 
 def to_json(analysis: Analysis, base_url: str) -> str:

@@ -215,3 +215,22 @@ def test_no_follow_skips_captive_hop() -> None:
     samples, _server, _port = probe.collect("http://10.0.0.1", transport=transport, follow=False)
     assert "location.href" in samples["body"]
     assert not any(url == "http://x/eportal/" for url in transport.calls)
+
+
+def test_probe_notes_the_followed_host() -> None:
+    """跟了跳转就在结论里点一句，别让用户以为指纹来自原地址。"""
+    captive = "http://portal.example/eportal/index.jsp"
+    transport = DictTransport(
+        {
+            "http://10.0.0.1/": f"<script>location.href='{captive}'</script>",
+            captive: "深澜 dr1003 enc_pwd getkey 城市热点",
+        }
+    )
+    analysis, _used = probe.probe("http://10.0.0.1", transport=transport)
+    assert any("portal.example" in note for note in analysis.notes)
+
+
+def test_probe_no_follow_has_no_host_note() -> None:
+    transport = DictTransport({"http://10.0.0.1/": "深澜"})
+    analysis, _used = probe.probe("http://10.0.0.1", transport=transport, follow=False)
+    assert not any("跳转" in note for note in analysis.notes)

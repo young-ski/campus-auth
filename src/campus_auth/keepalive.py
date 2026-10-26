@@ -24,6 +24,7 @@ class Cycle:
     attempted: bool
     ok: bool
     message: str
+    elapsed: float = 0.0  # 这一轮耗时（秒），由 watch 填
 
 
 def one_cycle(
@@ -81,6 +82,7 @@ def watch(
     cycle_no = 0
     while True:
         cycle_no += 1
+        started = time.monotonic()
         try:
             portal = make_portal()
             cycle = one_cycle(portal, account, password, operator, probe_host)
@@ -91,6 +93,7 @@ def watch(
         except Exception as exc:  # 保活不能因为一次意外就退出
             cycle = Cycle(online=False, attempted=False, ok=False, message=f"意外错误: {exc!r}")
 
+        cycle.elapsed = time.monotonic() - started
         on_cycle(cycle, cycle_no)
         failures = 0 if cycle.ok else failures + 1
         if once or (max_cycles is not None and cycle_no >= max_cycles):

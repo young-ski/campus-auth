@@ -159,7 +159,7 @@ campus-auth uninstall           # 停掉并删干净
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
 | `status` | 列出门户会话，标出哪条是你自己的；`--json` 里 `online` 指你自己、`any_online` 指门户里有任何会话 |
 | `check` | 只判定在线与否，结果走退出码 |
-| `watch` | 保活循环，`--once` 跑一轮，`--interval` 调间隔，`--log` 同时落盘（自动轮转） |
+| `watch` | 保活循环，启动打摘要、每轮带耗时；`--once` 跑一轮，`--log` 同时落盘（自动轮转） |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
 | `password` | 密码存进/删出系统钥匙串（`--show` 看状态，`--forget` 删） |
 | `urls` | 按当前 IP 生成 `.url` / `.desktop` 快捷方式（内含可还原的密码） |

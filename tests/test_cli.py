@@ -545,3 +545,47 @@ def test_every_subcommand_has_a_description() -> None:
     for name, child in sub.choices.items():
         assert child.description, f"{name} 缺 description"
         assert len(child.description) > 10
+
+
+# ---------- watch 的可观测性 ----------
+
+
+def test_watch_prints_startup_summary(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake_portal(monkeypatch)
+    assert run(["watch", "--once"]) == 0
+    out = capsys.readouterr().out
+    assert "适配层 huuc" in out
+    assert "账号 0814" in out
+
+
+def test_watch_prints_cycle_duration(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    import re
+
+    fake_portal(monkeypatch)
+    assert run(["watch", "--once"]) == 0
+    out = capsys.readouterr().out
+    assert re.search(r"#1 .+（\d+\.\d+s）", out), out
+
+
+def parse_json_objects(text: str) -> list[dict]:
+    decoder = json.JSONDecoder()
+    found: list[dict] = []
+    index = text.find("{")
+    while index != -1:
+        obj, end = decoder.raw_decode(text, index)
+        found.append(obj)
+        index = text.find("{", end)
+    return found
+
+
+def test_watch_json_has_start_and_elapsed(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake_portal(monkeypatch)
+    assert run(["watch", "--once", "--json"]) == 0
+    events = parse_json_objects(capsys.readouterr().out)
+    assert any(e.get("event") == "start" and e["adapter"] == "huuc" for e in events)
+    cycle = next(e for e in events if e.get("event") == "cycle")
+    assert isinstance(cycle["elapsed_ms"], int)

@@ -30,8 +30,9 @@ def cmd_watch(args: argparse.Namespace) -> int:
     log = None
     if args.log:
         log = RotatingLog(Path(args.log))
-        sys.stdout = Tee(sys.stdout, log)  # type: ignore[assignment]
-        sys.stderr = Tee(sys.stderr, log)  # type: ignore[assignment]
+        # pythonw 下 sys.stdout / stderr 是 None：让日志顶上，Tee 自己会去重
+        sys.stdout = Tee(sys.stdout or log, log)  # type: ignore[assignment]
+        sys.stderr = Tee(sys.stderr or log, log)  # type: ignore[assignment]
 
     interval = args.interval if args.interval is not None else config.interval
     if args.json:

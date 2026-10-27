@@ -47,6 +47,17 @@ def _run(cmd: list[str]) -> str:
     return ""
 
 
+def _block_is_for(block: str, ip: str | None) -> bool:
+    """这一块是不是 `ip` 那块网卡。
+
+    只做子串会错：查 `10.138.14.2` 时先出现的 `10.138.14.27` 块也包含它
+    （`2` 后面是 `7`，不是词边界）。
+    """
+    if not ip:
+        return True
+    return bool(re.search(rf"IPv4[^:：]*[:：]\s*{re.escape(ip)}\b", block, re.IGNORECASE))
+
+
 def local_mac(ip: str | None = None) -> str | None:
     """尽量返回出口网卡的 MAC（大写、无分隔）；取不到返回 None。
 
@@ -54,9 +65,12 @@ def local_mac(ip: str | None = None) -> str | None:
     """
     if sys.platform == "win32":
         text = _run(["ipconfig", "/all"])
-        for block in re.split(r"\r?\n\s*\r?\n", text):
-            if ip and ip not in block:
-                continue
+        blocks = re.split(r"\r?\n\s*\r?\n", text)
+        # 先按 IPv4 行精确找；一处都精确不到，再退回子串兜住老/本地化的 ipconfig
+        matched = [block for block in blocks if _block_is_for(block, ip)]
+        if not matched and ip:
+            matched = [block for block in blocks if ip in block]
+        for block in matched:
             match = _IPCONFIG_MAC.search(block)
             if match:
                 return match.group(1).replace("-", "").upper()

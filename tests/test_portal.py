@@ -209,7 +209,7 @@ def test_retry_after_garbage_falls_back(monkeypatch: pytest.MonkeyPatch) -> None
     transport = FakeTransport((429, "{}", {"Retry-After": "不久之后"}), (200, '{"result":1}'))
     portal, _ = make_adaptive(transport=transport, retries=1)
     portal.request(Request("/p"))
-    assert slept == [pytest.approx(2.0)]
+    assert slept == [pytest.approx(1.5)]  # 退避序列的第一档
 
 
 def test_retry_after_is_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -253,6 +253,15 @@ def test_request_error_can_show_secrets() -> None:
     with pytest.raises(TransportError) as info:
         portal.request(Request("/p", params=[Param("user_password", "abcdefgh", encode=False)]))
     assert "user_password=abcdefgh" in str(info.value)
+
+
+def test_mask_url_keeps_long_ciphertext_short() -> None:
+    """45 字符密码 = 90 位密文；旧实现只盖前 80 位，尾巴等于明文。"""
+    long_value = "0123456789" * 9
+    masked = _mask_url(f"https://p/login?user_password={long_value}&wlan_user_ip=1.2.3.4")
+    assert "user_password=01…89&" in masked
+    assert long_value not in masked
+    assert "wlan_user_ip=1.2.3.4" in masked
 
 
 def test_mask_url_hides_password_only() -> None:
@@ -306,3 +315,40 @@ def test_retry_delays_capped() -> None:
     delays = list(iter_retry_delays(10, base=1, cap=8))
     assert delays == sorted(delays)
     assert max(delays) <= 8
+
+
+def test_500_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """前置代理偶发一次 500 不该废掉整次登录。"""
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    transport = FakeTransport((500, "boom"), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=2)
+    assert portal.request(Request("/p")) == {"result": 1}
+    assert len(transport.calls) == 2
+
+
+@pytest.mark.parametrize("code", [500, 502, 504])
+def test_5xx_gateway_codes_are_retried(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    transport = FakeTransport((code, "boom"), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=1)
+    portal.request(Request("/p"))
+    assert len(transport.calls) == 2
+
+
+def test_400_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    transport = FakeTransport((400, "bad"))
+    portal, _ = make_adaptive(transport=transport, retries=2)
+    with pytest.raises(TransportError):
+        portal.request(Request("/p"))
+    assert len(transport.calls) == 1
+
+
+def test_lowercase_retry_after_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """代理常发小写头；旧实现按 `Retry-After` 精确查，直接走成 2 秒。"""
+    slept: list[float] = []
+    monkeypatch.setattr("time.sleep", slept.append)
+    transport = FakeTransport((429, "{}", {"retry-after": "20"}), (200, '{"result":1}'))
+    portal, _ = make_adaptive(transport=transport, retries=1)
+    portal.request(Request("/p"))
+    assert slept == [pytest.approx(20.0)]

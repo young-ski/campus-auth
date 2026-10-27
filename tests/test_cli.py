@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 from fake_transport import patch_send
 
 from campus_auth import cli, net
+from campus_auth.cli import _parser
 from campus_auth.portal import Portal
 
 IP = "10.138.14.27"
@@ -590,3 +592,137 @@ def test_watch_json_has_start_and_elapsed(
     assert any(e.get("event") == "start" and e["adapter"] == "huuc" for e in events)
     cycle = next(e for e in events if e.get("event") == "cycle")
     assert isinstance(cycle["elapsed_ms"], int)
+
+
+# ---------- --json 的 stdout 纯度 ----------
+
+
+def test_login_json_stdout_is_pure(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    fake_portal(monkeypatch)
+    assert run(["login", "-a", "1", "-p", "p", "--json"]) == 0
+    captured = capsys.readouterr()
+    json.loads(captured.out)
+    assert captured.out.lstrip().startswith("{")
+    assert "服务端" not in captured.out
+    assert "服务端" in captured.err
+
+
+def test_login_json_already_online_is_pure(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    state = fake_portal(monkeypatch)
+    state["online"] = True
+    assert run(["login", "-a", "1", "-p", "p", "--json"]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["already_online"] is True
+
+
+def test_logout_json_stdout_is_pure(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    fake_portal(monkeypatch)
+    assert run(["logout", "-a", "1", "--json"]) == 0
+    captured = capsys.readouterr()
+    json.loads(captured.out)
+    assert "服务端" not in captured.out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["init"], ["adapters"], ["urls"], ["password"], ["install"], ["uninstall"]],
+)
+def test_json_flag_is_rejected_where_unsupported(campus: Path, argv: list[str]) -> None:
+    """不支持就直说，别静默吃 flag 再吐人话。"""
+    with pytest.raises(SystemExit) as caught:
+        run([*argv, "--json"])
+    assert caught.value.code == 2
+
+
+# ---------- 配置健壮性 ----------
+
+
+def test_numeric_account_in_toml_is_coerced(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """TOML 里 `account = 81456789`（不加引号）不许再抛 TypeError / 退 70。"""
+    target = campus / "numeric.toml"
+    target.write_text('adapter = "huuc"\naccount = 81456789\npassword = "pw"\n', encoding="utf-8")
+    fake_portal(monkeypatch)
+    # fake_portal 的会话行账号固定 0814，与本配置对不上，所以只会走到「未确认在线」；
+    # 这里验的是数字账号被 str 化并拼进了请求，不是在线判定。
+    assert run(["login", "--config", str(target)]) == 1
+    assert "81456789" in capsys.readouterr().out
+
+
+def test_out_of_range_port_is_a_config_error(campus: Path, capsys) -> None:
+    assert run(["status", "--url", "http://h:99999"]) == 2
+    assert "端口" in capsys.readouterr().err
+
+
+def test_url_without_host_is_a_config_error(campus: Path, capsys) -> None:
+    assert run(["status", "--url", "nonsense"]) == 2
+    assert "主机名" in capsys.readouterr().err
+
+
+def test_non_ascii_password_is_rejected(campus: Path, capsys) -> None:
+    """前端只对 ASCII 取 charCode，中文密码发出去是另一份密文。"""
+    target = campus / "cjk.toml"
+    target.write_text(
+        'adapter = "huuc"\naccount = "0814"\npassword = "密码123"\n', encoding="utf-8"
+    )
+    assert run(["login", "--config", str(target)]) == 2
+    assert "ASCII" in capsys.readouterr().err
+
+
+def test_non_ascii_password_can_still_be_stored(campus: Path, capsys) -> None:
+    target = campus / "cjk.toml"
+    target.write_text('adapter = "huuc"\naccount = "0814"\n', encoding="utf-8")
+    # 没装 keyring 时是 3（环境问题），重点是别被 ASCII 校验拦成 2
+    assert run(["password", "--config", str(target), "-p", "密码123"]) == 3
+
+
+def test_forget_reports_deletion_failure(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "delete", lambda _a, _acc: False)
+    monkeypatch.setattr(credentials, "available", lambda: True)
+    assert run(["password", "--forget", "-a", "0814"]) == 3
+    assert "删不掉" in capsys.readouterr().out
+
+
+def test_mac_must_be_twelve_hex(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    fake_portal(monkeypatch)
+    assert run(["status", "-a", "0814", "--mac", "ZZZZZZZZZZZZ"]) == 2
+    assert "十六进制" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("mac", ["AABBCCDDEEFF", "aa:bb:cc:dd:ee:ff", "AA-BB-CC-DD-EE-FF"])
+def test_mac_accepts_common_spellings(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, mac: str
+) -> None:
+    state = fake_portal(monkeypatch)
+    state["online"] = True
+    assert run(["status", "-a", "0814", "--mac", mac]) == 0
+
+
+def test_verify_tls_flag_parsing() -> None:
+    """配置里开了校验之后，命令行必须能关回去。"""
+    args = _parser().parse_args(["status", "--verify-tls"])
+    assert args.verify_tls is True
+    args = _parser().parse_args(["status", "--no-verify-tls"])
+    assert args.verify_tls is False
+    args = _parser().parse_args(["status"])
+    assert args.verify_tls is None
+
+
+def test_no_verify_tls_overrides_true_config(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from campus_auth.commands._common import _config
+
+    target = campus / "tls.toml"
+    target.write_text(
+        'adapter = "huuc"\naccount = "0814"\npassword = "pw"\nverify_tls = true\n', "utf-8"
+    )
+    args = argparse.Namespace(config=str(target), verify_tls=False, show_secrets=False)
+    assert _config(args).verify_tls is False
+    args.verify_tls = None
+    assert _config(args).verify_tls is True

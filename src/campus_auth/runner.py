@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 from dataclasses import dataclass
 
@@ -42,7 +43,12 @@ def _host_port(base_url: str) -> tuple[str, int]:
     parts = urllib.parse.urlsplit(base_url)
     if not parts.hostname:
         raise ConfigError(f"base_url 里没有主机名: {base_url!r}")
-    return parts.hostname, parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        port = parts.port
+    except ValueError as exc:
+        # urlsplit 对越界端口只抛原生 ValueError，会一路漏成 traceback
+        raise ConfigError(f"base_url 的端口不合法: {base_url!r}（{exc}）") from exc
+    return parts.hostname, port or (443 if parts.scheme == "https" else 80)
 
 
 def build(config: Config, *, need_password: bool = True) -> Context:
@@ -54,7 +60,7 @@ def build(config: Config, *, need_password: bool = True) -> Context:
 
     ip = config.ip or net.local_ip(host, port)
     mac = (config.mac or net.local_mac(ip) or "").upper().replace(":", "").replace("-", "")
-    if mac and len(mac) != 12:
+    if mac and not re.fullmatch(r"[0-9A-F]{12}", mac):
         raise ConfigError(f"MAC 看起来不对: {config.mac!r}，应为 12 位十六进制")
     ssid = net.current_ssid()
 

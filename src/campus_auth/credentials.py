@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import contextlib
-
 SERVICE = "campus-auth"
 
 
@@ -21,15 +19,27 @@ def _backend():
     return keyring
 
 
+_FAIL_BACKENDS = ("keyring.backends.fail",)
+
+
+def _backend_name(keyring) -> str:
+    backend = keyring.get_keyring()
+    return f"{type(backend).__module__}.{type(backend).__name__}"
+
+
 def available() -> bool:
-    """能真正存读吗（装了包且后端可用）。"""
+    """能真正存读吗（装了包且后端可用）。
+
+    `keyring.backends.fail.Keyring` 是个永远抛异常的单例，非 `None` 所以不能只判空。
+    """
     keyring = _backend()
     if keyring is None:
         return False
     try:
-        return keyring.get_keyring() is not None
+        name = _backend_name(keyring)
     except Exception:  # 后端初始化五花八门，一律当不可用
         return False
+    return name.split(".")[0] != "" and not name.startswith(_FAIL_BACKENDS)
 
 
 def _user(adapter: str, account: str) -> str:
@@ -59,12 +69,18 @@ def set(adapter: str, account: str, password: str) -> bool:
 
 
 def delete(adapter: str, account: str) -> bool:
-    """删掉；本来就没有也算删完。拿不到后端才返回 False。"""
+    """删掉；本来就没有也算删完，后端报错则返回 False。
+
+    「后端坏了」和「本来就没这一条」必须分开 —— 前者要是报成功，`--forget` 就骗人。
+    """
     keyring = _backend()
     if keyring is None or not adapter or not account:
         return False
-    with contextlib.suppress(Exception):  # 没这条就是 PasswordDeleteError，无所谓
+    try:
         keyring.delete_password(SERVICE, _user(adapter, account))
+    except Exception as exc:
+        problem = type(exc).__name__.lower()
+        return problem in {"keyerror", "passworddeleteerror"} or "not found" in str(exc).lower()
     return True
 
 

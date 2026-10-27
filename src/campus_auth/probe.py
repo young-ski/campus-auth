@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from .errors import EnvironmentError_, TransportError
+from .errors import ConfigError, TransportError
 from .transport import MAX_BODY, Response, Transport, UrllibTransport
 
 MAX_JS = 1  # 指纹基本都在第一个脚本里，多抓只是拖慢
@@ -114,7 +114,8 @@ DRCOM_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
         "body",
         re.compile(r"\bprobe1003\s*\("),
     ),
-    ("Server 是 nginx 且端口像网关", 10, "drcom", "server", ""),
+    # nginx 对任何 80/443/8080 的站点都成立，只值半分
+    ("Server 是 nginx 且端口像网关", 5, "drcom", "server", ""),
 ]
 
 RUIJIE_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
@@ -142,8 +143,12 @@ SRUN_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
 ]
 
 # 各家认定的门槛，以及必须领先第二名多少分 —— 差得不多就只给"证据不全"。
-THRESHOLD = {"drcom": 40, "ruijie": 35, "srun": 40}
+THRESHOLD = {"drcom": 55, "ruijie": 35, "srun": 40}
 MARGIN = 10
+
+# 通用信号（wlan_user_ip、result 字段、nginx）谁都可能有，分数能凑够也不代表是它。
+# 判成"是 Dr.COM"必须有一条独有特征撑着。
+DISTINCTIVE = ("enc_pwd", "getkey")
 
 
 def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = None) -> Analysis:
@@ -190,6 +195,11 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
     ranked = sorted(scores, key=lambda name: scores[name], reverse=True)
     best, runner_up = ranked[0], ranked[1]
     decisive = scores[best] >= THRESHOLD[best] and scores[best] - scores[runner_up] >= MARGIN
+    if decisive and best == "drcom":
+        # 凑够分还不够：独有特征得真的命中
+        decisive = any(
+            signal.hit and any(word in signal.name for word in DISTINCTIVE) for signal in evidence
+        )
 
     if decisive:
         verdict = best
@@ -246,15 +256,18 @@ def collect(
     follow: bool = True,
     info: dict[str, object] | None = None,
 ) -> tuple[dict[str, str], str, int | None]:
-    """按 PROBE_PATHS 采样，并顺带抓最多 3 个同源 JS。
+    """按 PROBE_PATHS 采样，并顺带抓 1 个 JS（可跨源，路径由页面自己给）。
 
     返回 (样本, Server 头, 端口)。sample 只含 body / js，头信息单独给。
     根页面若只是劫持跳转（锐捷常态），会跟着它给的地址再走一步。
     """
     parts = urllib.parse.urlsplit(base_url)
     if not parts.hostname:
-        raise EnvironmentError_(f"看不懂的地址: {base_url!r}，要 http(s)://host[:port]")
-    port = parts.port or (443 if parts.scheme == "https" else 80)
+        raise ConfigError(f"看不懂的地址: {base_url!r}，要 http(s)://host[:port]")
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ConfigError(f"{base_url!r} 的端口不合法（{exc}）") from exc
     send = transport or UrllibTransport(verify_tls=verify)
 
     def fetch(url: str, limit: int = MAX_BODY) -> Response:
@@ -334,7 +347,7 @@ JSON_SCHEMA_VERSION = 1
 
 def to_json(analysis: Analysis, base_url: str) -> str:
     return json.dumps(
-        {"schema": JSON_SCHEMA_VERSION, "target": base_url, **analysis.to_dict()},
+        {"schema": JSON_SCHEMA_VERSION, "ok": True, "target": base_url, **analysis.to_dict()},
         ensure_ascii=False,
         indent=2,
     )

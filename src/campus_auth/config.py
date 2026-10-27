@@ -71,6 +71,11 @@ class Config:
                 + ", ".join(missing)
                 + f"。可运行 `campus-auth init` 生成配置模板，或设 ${ENV_PASSWORD}。"
             )
+        if self.password and not self.password.isascii():
+            raise ConfigError(
+                "密码里有非 ASCII 字符：门户前端只按 ASCII 取 charCode，"
+                "发出去的密文会和浏览器不一致。先把密码改成纯 ASCII。"
+            )
         if self.operator and self.operator != "none":
             from .adapters import get_adapter
 
@@ -101,7 +106,22 @@ def find_config_file(explicit: str | os.PathLike[str] | None = None) -> Path | N
     return None
 
 
+_STRING_FIELDS = {
+    "adapter",
+    "account",
+    "password",
+    "operator",
+    "mac",
+    "ip",
+    "base_url",
+    "probe_host",
+}
+
+
 def _coerce(name: str, value: Any) -> Any:
+    # `account = 81456789` 这类不加引号的写法很常见，下游 ord(ch) 直接吃不下
+    if name in _STRING_FIELDS:
+        return value if isinstance(value, str) else str(value)
     if name in {"timeout", "interval", "jitter"}:
         try:
             return float(value)
@@ -160,17 +180,21 @@ def load(
         for key, value in load_file(path).items():
             setattr(config, key, value)
 
-    if os.environ.get(ENV_PASSWORD):
-        config.password = os.environ[ENV_PASSWORD]
-    elif not config.password:
-        # 钥匙串是最后一档：环境变量 > 配置文件 > keyring
-        config.password = credentials.get(config.adapter, config.account)
-
-    for key, value in (overrides or {}).items():
+    overrides = overrides or {}
+    for key, value in overrides.items():
         if value is None:
             continue
         if not hasattr(config, key):
             raise ConfigError(f"未知配置项: {key}")
         setattr(config, key, _coerce(key, value))
+
+    # 优先级：命令行 > 环境变量 > 配置文件 > 钥匙串。
+    # 钥匙串必须最后查 —— 它的键里带账号，而账号可能刚被命令行改过。
+    if "password" in overrides:
+        pass
+    elif os.environ.get(ENV_PASSWORD):
+        config.password = os.environ[ENV_PASSWORD]
+    elif not config.password:
+        config.password = credentials.get(config.adapter, config.account)
 
     return config

@@ -1,6 +1,6 @@
 """命令行入口：只有 parser、分之调度和退出码。
 
-各子命令的实现都在 `commands.py`。
+各子命令的实现都在 `commands/` 包里。
 """
 
 from __future__ import annotations
@@ -68,7 +68,12 @@ def _parser() -> argparse.ArgumentParser:
     tuning = argparse.ArgumentParser(add_help=False)
     tuning.add_argument("--timeout", type=float, metavar="秒", help="单次请求超时")
     tuning.add_argument("--retries", type=int, metavar="次", help="传输重试次数")
-    tuning.add_argument("--verify-tls", action="store_true", help="校验证书（默认不校验）")
+    tuning.add_argument(
+        "--verify-tls",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="校验证书（默认不校验；--no-verify-tls 覆盖配置里的 true）",
+    )
 
     # 只带账号、不带密码的父参数（注销 / 解绑 / 状态 / 检查都不需要密码）
     accounting = argparse.ArgumentParser(add_help=False)
@@ -81,12 +86,22 @@ def _parser() -> argparse.ArgumentParser:
     minimal.add_argument("--config", metavar="路径", help="配置文件路径")
     minimal.add_argument("--json", action="store_true", help="输出 JSON，给脚本读")
 
+    # 不实现 --json 的命令就用这两个：宁可 argparse 报错，也别静默吃 flag
+    plain = argparse.ArgumentParser(add_help=False)
+    plain.add_argument("--config", metavar="路径", help="配置文件路径")
+
+    creds = argparse.ArgumentParser(add_help=False)
+    creds.add_argument("--config", metavar="路径", help="配置文件路径")
+    creds.add_argument("-a", "--account", metavar="学号", help="学号，纯数字，不带 @ 后缀")
+    creds.add_argument("-p", "--password", metavar="密码", help="密码（会留在 shell 历史里）")
+    creds.add_argument("--password-stdin", action="store_true", help="从标准输入读密码")
+
     auth_parents = [essential, identity, tuning]
     sub = parser.add_subparsers(dest="command", required=True, metavar="命令")
 
     init = sub.add_parser(
         "init",
-        parents=[minimal, identity],
+        parents=[plain, identity],
         help="生成配置模板",
         description="写一份配置模板。填 account、存密码之后再跑 status 自检。",
     )
@@ -96,7 +111,7 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser(
         "adapters",
-        parents=[minimal],
+        parents=[plain],
         help="列出内置适配层与验证状态",
         description="看内置了哪些学校。加自己学校时照 generic 复制一份。",
     ).set_defaults(func=cmd_adapters)
@@ -154,7 +169,7 @@ def _parser() -> argparse.ArgumentParser:
 
     urls = sub.add_parser(
         "urls",
-        parents=[essential, identity, tuning],
+        parents=[creds, identity, tuning],
         help="为当前 IP 生成快捷方式",
         description="生成 .url / .desktop。里面的密码是可还原的密文，别随手分享。",
     )
@@ -180,7 +195,7 @@ def _parser() -> argparse.ArgumentParser:
 
     password_p = sub.add_parser(
         "password",
-        parents=[essential, identity],
+        parents=[creds, identity],
         help="密码存进 / 删出系统钥匙串",
         description="交互式输入（不回显）；管道里则读一行。",
     )
@@ -190,7 +205,7 @@ def _parser() -> argparse.ArgumentParser:
 
     install_p = sub.add_parser(
         "install",
-        parents=[minimal, identity],
+        parents=[plain, identity],
         help="把 watch 装成登录自启",
         description="Windows 写 HKCU Run、Linux 写 systemd 用户单元、macOS 写 LaunchAgent。",
     )
@@ -199,7 +214,7 @@ def _parser() -> argparse.ArgumentParser:
 
     uninstall_p = sub.add_parser(
         "uninstall",
-        parents=[minimal, identity],
+        parents=[plain, identity],
         help="卸掉 install 装的自启",
         description="停掉并删除 install 写下的东西。",
     )
@@ -227,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             EnvironmentError_: "环境: ",
         }.get(type(exc), "")
         _err(f"{prefix}{exc}")
-        if args.json:
+        if getattr(args, "json", False):
             _dump({"ok": False, "error": str(exc)})
         return exc.exit_code
     except KeyboardInterrupt:

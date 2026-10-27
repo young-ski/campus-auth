@@ -80,8 +80,8 @@ $ campus-auth probe --url http://10.210.213.208:802
 ```
 
 判定不是看一条信号：`dr1003` 只有**页面里出现过**才算数（Dr.COM 会回显你传的任何 callback），
-权重按“哪家独有”排，一家要过 35～40 分**并且领先第二名 10 分**才敢下结论，咬得紧就只说
-“像”，并列出还缺哪些证据。
+`wlan_user_ip`、`result` 这种谁都有的只值低分。要判成「是 Dr.COM」，除了分数过 55 分、
+领先第二名 10 分，还必须命中 `enc_pwd` / `getkey` 这类独有特征；凑不够就只说「像」，并列出还缺哪些证据。
 
 | probe 说 | 怎么办 |
 | --- | --- |
@@ -125,7 +125,10 @@ retries = 2
 interval = 120
 ```
 
-**密码别写进仓库。** 优先级从高到低：`$CAMPUS_AUTH_PASSWORD` → 配置文件 → 系统钥匙串。
+**密码必须是纯 ASCII。** 门户前端只按 `charCode` 逐字符取异或，中文密码发出去的密文和浏览器不一致；
+写了非 ASCII 会直接以配置错（退出码 2）拦下来。学号、MAC 同理。
+
+**密码别写进仓库。** 优先级从高到低：命令行 `-p` → `$CAMPUS_AUTH_PASSWORD` → 配置文件 → 系统钥匙串。
 推荐钥匙串（Windows 凭据管理器 / macOS Keychain / Linux Secret Service）：
 
 ```bash
@@ -151,7 +154,11 @@ campus-auth uninstall           # 停掉并删干净
 
 ## JSON 输出
 
-`--json` 的每个对象都带 `"schema": 1`，同一版本内只增字段、不删不改。
+`--json` 时 **stdout 只有 JSON 对象**，提示、进度、服务端原文这类人话一律进 stderr，
+所以 `| jq` 能直接用。支持这件事的只有 `probe`/`status`/`login`/`logout`/`unbind`/`check`/`watch`；
+其余命令不接受这个参数。
+
+每个对象都带 `"schema": 1`，同一版本内只增字段、不删不改。
 字段表、示例和稳定性约定在 [`docs/json.md`](docs/json.md)，机器可读版在
 [`docs/json.schema.json`](docs/json.schema.json)（CI 会拿真实输出对一遍）。
 
@@ -183,6 +190,14 @@ campus-auth uninstall           # 停掉并删干净
 `generic` 就是模板：复制成 `<学校代号>.py`，按 F12 抓到的真请求改 `base_url`、参数名、
 密钥函数，再到 `adapters/__init__.py` 登记。步骤和验收清单见
 [`CONTRIBUTING.md`](CONTRIBUTING.md)，那里也写了哪些东西不能提交（真实学号、密码、MAC）。
+
+**不想改主仓，或还没准备 PR**：`--adapter` 也能直接从自己的文件加载（`路径.py:属性名`，
+文件里只要有一个 `Adapter` 实例）。它依赖内部接口，请锁版本；跑通了把一行补进
+[`docs/schools.md`](docs/schools.md)，别人少走一遍。
+
+```bash
+campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
+```
 
 ## 已知限制
 

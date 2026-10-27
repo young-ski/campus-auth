@@ -15,7 +15,16 @@ from ..errors import (
     TransportError,
 )
 from ..runner import Context, build, require_campus
-from ._common import _config, _dump, _hint_line, _payload_ok, _prepare, _say, _zone_line
+from ._common import (
+    _config,
+    _dump,
+    _hint_line,
+    _note,
+    _payload_ok,
+    _prepare,
+    _say,
+    _zone_line,
+)
 
 
 def _is_ours(session, ctx: Context) -> bool:
@@ -31,10 +40,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     config = _config(args)
     if not config.account:
         message = "还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status"
+        _note(args, f"! {message}")
         if args.json:
             _dump({"ok": False, "error": message})
-        else:
-            _say(f"! {message}")
         return EXIT_CONFIG
     ctx = build(config, need_password=False)
     require_campus(ctx)
@@ -57,7 +65,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     if not sessions:
         _say(f"未在线（本机 {ctx.ip}，{ctx.zone}）")
-        _zone_line(ctx)
+        _zone_line(ctx, args)
         return EXIT_REJECTED
 
     for session in mine:
@@ -88,7 +96,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     try:
         online = ctx.portal.mine() is not None
     except CampusAuthError as exc:
+        if args.json:
+            _dump({"ok": False, "online": False, "error": str(exc)})
         return exc.exit_code
+    if args.json:
+        _dump({"ok": online, "online": online})
+        return EXIT_OK if online else EXIT_REJECTED
     if args.quiet:
         return EXIT_OK if online else EXIT_REJECTED
     _say("online" if online else "offline")
@@ -102,17 +115,29 @@ def cmd_login(args: argparse.Namespace) -> int:
     config = _config(args)
     ctx = _prepare(args, config)
     account = ctx.adapter.format_account(config.account, config.operator)
-    _say(f"IP {ctx.ip}  MAC {ctx.mac or '(空)'}  账号 {account}")
-    _zone_line(ctx)
+    _note(args, f"IP {ctx.ip}  MAC {ctx.mac or '(空)'}  账号 {account}")
+    _zone_line(ctx, args)
 
     if ctx.portal.mine():
-        _say("已经在线，无需重复登录")
+        _note(args, "已经在线，无需重复登录")
+        if args.json:
+            _dump(
+                {
+                    "ok": True,
+                    "already_online": True,
+                    "result": True,
+                    "msg": "已经在线",
+                    "ret_code": 0,
+                    "hint": "",
+                    "ip": ctx.ip,
+                }
+            )
         return EXIT_OK
 
     result = ctx.portal.login()
-    _say(f"服务端: {result.msg or '(无消息)'}  ret_code={result.ret_code}")
+    _note(args, f"服务端: {result.msg or '(无消息)'}  ret_code={result.ret_code}")
     if result.hint:
-        _say(f"! {result.hint}")
+        _note(args, f"! {result.hint}")
 
     online = False
     for attempt in range(3):
@@ -124,10 +149,12 @@ def cmd_login(args: argparse.Namespace) -> int:
             pass
         time.sleep(0.8 * (attempt + 1))
 
+    _note(args, "结果: 已在线" if online else "结果: 未确认在线")
     if args.json:
         _dump(
             {
                 "ok": online,
+                "already_online": False,
                 "result": result.ok,
                 "msg": result.msg,
                 "ret_code": result.ret_code,
@@ -135,7 +162,6 @@ def cmd_login(args: argparse.Namespace) -> int:
                 "ip": ctx.ip,
             }
         )
-    _say("结果: 已在线" if online else "结果: 未确认在线")
     if online and args.remember:
         _remember_password(config)
     return EXIT_OK if online else EXIT_REJECTED
@@ -152,9 +178,9 @@ def cmd_logout(args: argparse.Namespace) -> int:
         or payload.get("suc_msg")
         or payload.get("error")
     )
-    _say(f"服务端: {msg or '(无消息)'}")
+    _note(args, f"服务端: {msg or '(无消息)'}")
     ok = _payload_ok(payload)
-    _hint_line(ctx, ok, msg)
+    _hint_line(ctx, ok, msg, args)
     if args.json:
         _dump({"ok": ok, "msg": msg})
     return EXIT_OK if ok else EXIT_REJECTED
@@ -168,17 +194,17 @@ def cmd_unbind(args: argparse.Namespace) -> int:
         payload = ctx.portal.unbind()
     except (TransportError, ParseError) as exc:
         # 门户回 HTML（地址写错、改版）时解析不出 JSON，落到这里
-        _say(f"解绑失败: {str(exc).splitlines()[0]}")
+        _note(args, f"解绑失败: {str(exc).splitlines()[0]}")
         hint = ctx.adapter.hint_for(None, str(exc))
         if hint:
-            _say(f"! {hint}")
+            _note(args, f"! {hint}")
         if args.json:
             _dump({"ok": False, "error": str(exc)})
         return EXIT_TRANSPORT
     message = payload.get("msg") or payload.get("message") or payload.get("error")
-    _say(f"服务端: {message or '(无消息)'}  MAC {ctx.mac}")
+    _note(args, f"服务端: {message or '(无消息)'}  MAC {ctx.mac}")
     ok = _payload_ok(payload)
-    _hint_line(ctx, ok, message)
+    _hint_line(ctx, ok, message, args)
     if args.json:
         _dump({"ok": ok, "msg": message})
     return EXIT_OK if ok else EXIT_REJECTED

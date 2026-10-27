@@ -77,7 +77,8 @@
         "msg": { "type": "string" },
         "ret_code": { "type": ["integer", "null"] },
         "hint": { "type": "string" },
-        "ip": { "type": "string" }
+        "ip": { "type": "string" },
+        "already_online": { "type": "boolean" }
       },
       "additionalProperties": true
     },
@@ -88,6 +89,16 @@
         "schema": { "$ref": "#/definitions/schema" },
         "ok": { "type": "boolean" },
         "msg": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "check": {
+      "type": "object",
+      "required": ["schema", "ok", "online"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "type": "boolean" },
+        "online": { "type": "boolean" }
       },
       "additionalProperties": true
     },
@@ -133,6 +144,7 @@
     { "$ref": "#/definitions/status" },
     { "$ref": "#/definitions/login" },
     { "$ref": "#/definitions/action" },
+    { "$ref": "#/definitions/check" },
     { "$ref": "#/definitions/watch_start" },
     { "$ref": "#/definitions/watch_cycle" },
     { "$ref": "#/definitions/error" }

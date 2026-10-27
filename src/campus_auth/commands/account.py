@@ -29,7 +29,10 @@ def cmd_password(args: argparse.Namespace) -> int:
         if credentials.delete(config.adapter, config.account):
             _say(f"已从钥匙串删除 {config.adapter}/{config.account}。")
             return EXIT_OK
-        _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+        if credentials.available():
+            _say(f"! 删不掉 {config.adapter}/{config.account}：钥匙串后端报错，稍后再试。")
+        else:
+            _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
         return EXIT_ENV
 
     if args.show:

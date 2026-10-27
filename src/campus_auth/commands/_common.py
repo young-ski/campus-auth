@@ -41,15 +41,29 @@ def _err(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
+def _note(args: argparse.Namespace, message: str = "") -> None:
+    """面向人的一句：`--json` 时进 stderr，别弄脏 stdout。"""
+    if getattr(args, "json", False):
+        _err(message)
+    else:
+        _say(message)
+
+
 def _dump(data: dict) -> None:
     """打印一个 JSON 对象，统一挂上 schema 版本。"""
     payload = {"schema": JSON_SCHEMA_VERSION, **data}
     print(json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
 
 
-def _zone_line(ctx: Context) -> None:
-    if ctx.zone_hint:
-        _say(f"! {ctx.zone_hint}")
+def _zone_line(ctx: Context, args: argparse.Namespace | None = None) -> None:
+    """区域提示；没给 args 就照旧写 stdout。"""
+    if not ctx.zone_hint:
+        return
+    text = f"! {ctx.zone_hint}"
+    if args is None:
+        _say(text)
+    else:
+        _note(args, text)
 
 
 def _config(args: argparse.Namespace) -> Config:
@@ -71,8 +85,8 @@ def _config(args: argparse.Namespace) -> Config:
         overrides["password"] = sys.stdin.readline().rstrip("\r\n")
     elif getattr(args, "password", None) is not None:
         overrides["password"] = args.password
-    if getattr(args, "verify_tls", False):
-        overrides["verify_tls"] = True
+    if getattr(args, "verify_tls", None) is not None:
+        overrides["verify_tls"] = args.verify_tls
     if getattr(args, "show_secrets", False):
         overrides["mask_urls"] = False
     return load(getattr(args, "config", None), overrides)
@@ -91,7 +105,12 @@ def _payload_ok(payload: dict) -> bool:
     return str(payload.get("error") or "").lower() == "ok"
 
 
-def _hint_line(ctx, ok: bool, msg: object) -> None:
+def _hint_line(
+    ctx: Context,
+    ok: bool,
+    msg: object,
+    args: argparse.Namespace | None = None,
+) -> None:
     """失败时请适配层把含糊报错翻成人话。
 
     适配层的兜底提示只是把原文再抄一遍，已经在上面打过了 —— 那就别重复。
@@ -101,4 +120,8 @@ def _hint_line(ctx, ok: bool, msg: object) -> None:
     text = str(msg or "")
     hint = ctx.adapter.hint_for(None, text)
     if hint and (not text or text not in hint):
-        _say(f"! {hint}")
+        line = f"! {hint}"
+        if args is None:
+            _say(line)
+        else:
+            _note(args, line)

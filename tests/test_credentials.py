@@ -64,7 +64,7 @@ def test_backend_errors_are_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
     assert credentials.available() is False
     assert credentials.get("ruijie", "1") == ""
     assert credentials.set("ruijie", "1", "a") is False
-    assert credentials.delete("ruijie", "1") is True  # 删失败也算删过
+    assert credentials.delete("ruijie", "1") is False  # 后端报错不能报成功
 
 
 def test_without_keyring_package() -> None:
@@ -73,3 +73,41 @@ def test_without_keyring_package() -> None:
     assert credentials.get("ruijie", "1") == ""
     assert credentials.set("ruijie", "1", "a") is False
     assert credentials.delete("ruijie", "1") is False
+
+
+def test_delete_reports_backend_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """后端锁着时不能报成功，否则 `--forget` 会骗人。"""
+
+    def boom(*_args):
+        raise RuntimeError("vault 锁了")
+
+    module = types.SimpleNamespace(
+        get_keyring=lambda: object(), delete_password=boom, get_password=lambda *a: None
+    )
+    monkeypatch.setattr(credentials, "_backend", lambda: module)
+    assert credentials.delete("huuc", "1") is False
+
+
+def test_delete_missing_entry_is_still_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """「本来就没有」是幂等成功，别跟后端报错混为一谈。"""
+
+    class PasswordDeleteError(Exception):
+        pass
+
+    def missing(*_args):
+        raise PasswordDeleteError("not found")
+
+    module = types.SimpleNamespace(get_keyring=lambda: object(), delete_password=missing)
+    monkeypatch.setattr(credentials, "_backend", lambda: module)
+    assert credentials.delete("huuc", "1") is True
+
+
+def test_available_rejects_the_fail_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`keyring.backends.fail.Keyring` 永远抛异常，但 `is not None` 会判真。"""
+
+    class Keyring:
+        pass
+
+    Keyring.__module__ = "keyring.backends.fail"
+    monkeypatch.setattr(credentials, "_backend", lambda: types.SimpleNamespace(get_keyring=Keyring))
+    assert credentials.available() is False

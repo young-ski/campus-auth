@@ -24,7 +24,19 @@ from .adapters.base import Adapter, LoginResult, Request
 from .errors import ParseError, TransportError
 from .transport import USER_AGENT, Transport, UrllibTransport
 
-_SECRET_PARAM = re.compile(r"(user_password|password)=([^&\s]{1,80})")
+_SECRET_PARAM = re.compile(r"(user_password|password)=([^&\s]+)")
+
+# 一次过的 5xx 多半来自前置代理，值得重试；4xx 重发还是那样。
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    """按名字取头，忽略大小写（`dict()` 展平后 `Message` 的语义就没了）。"""
+    wanted = name.lower()
+    for key, value in headers.items():
+        if key.lower() == wanted:
+            return value
+    return None
 
 
 def _mask_url(url: str) -> str:
@@ -169,6 +181,7 @@ class Portal:
             headers.setdefault("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 
         last: Exception | None = None
+        delays = iter_retry_delays(self.retries)
         for attempt in range(self.retries + 1):
             self.last_attempts = attempt + 1
             try:
@@ -178,7 +191,7 @@ class Portal:
             except TransportError as exc:
                 last = exc
                 if attempt < self.retries:
-                    time.sleep(1.5 * (attempt + 1) + random.random())
+                    time.sleep(next(delays, 1.5) + random.random())
                     continue
                 # urllib 会把 SSL 错误包进 URLError.reason，这里拆出来给人话
                 tls = getattr(exc, "reason", None)
@@ -188,8 +201,9 @@ class Portal:
                 raise TransportError(
                     f"请求失败，已重试 {self.retries} 次{hint}\n{self.last_url}\n{last}"
                 ) from exc
-            if response.status in (429, 503) and attempt < self.retries:
-                time.sleep(_retry_after(response.headers.get("Retry-After"), 2.0 * (attempt + 1)))
+            if response.status in RETRY_STATUSES and attempt < self.retries:
+                fallback = next(delays, 2.0)
+                time.sleep(_retry_after(_header(response.headers, "retry-after"), fallback))
                 continue
             if response.status >= 400:
                 # 4xx/5xx 一律算失败：错误页里也可能带个 `{"result":0}`，别当成功
@@ -197,7 +211,6 @@ class Portal:
                     f"HTTP {response.status} {response.text[:200]!r}\n{self.last_url}"
                 )
             return extract_json(response.text)
-        raise TransportError(f"请求失败（已重试 {self.retries} 次）: {self.last_url}\n{last}")
 
     def raw(
         self,

@@ -46,3 +46,16 @@ def test_ambiguous_drcom_and_srun_says_so() -> None:
     analysis = analyze({"body": "dr1003 srun_portal"})
     assert analysis.verdict == "likely-drcom"
     assert any("分不开" in note for note in analysis.notes)
+
+
+def test_generic_nginx_page_is_not_decisively_drcom() -> None:
+    """只有通用信号（wlan_user_ip + result + nginx）撑不起「是 Dr.COM」。"""
+    samples = {"body": '<form action="/login"><input name="wlan_user_ip"></form> {"result":0}'}
+    analysis = analyze(samples, server="nginx", port=80)
+    assert analysis.verdict != "drcom"
+    assert analysis.is_drcom  # 仍给 likely-drcom 并列出缺什么，别掉成 unknown
+
+
+def test_distinctive_signal_restores_the_decisive_verdict() -> None:
+    samples = {"body": 'wlan_user_ip {"result":0}', "js": "function enc_pwd(){}"}
+    assert analyze(samples, server="nginx", port=80).verdict == "drcom"

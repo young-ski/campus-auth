@@ -6,9 +6,20 @@ import argparse
 
 from .. import adapters
 from ..config import load
-from ..errors import EXIT_ENV, EXIT_OK, EXIT_REJECTED, CampusAuthError
+from ..errors import EXIT_OK, EXIT_REJECTED, CampusAuthError, ConfigError
 from ..probe import probe, to_json
-from ._common import _err, _say
+from ._common import _dump, _err, _say
+
+
+def _fail(args: argparse.Namespace, exc: CampusAuthError, hint: str) -> int:
+    """失败出口：人话进 stderr，`--json` 时 stdout 补一个对象。"""
+    _err(str(exc))
+    if args.json:
+        _dump({"ok": False, "error": str(exc)})
+    else:
+        _say("")
+        _say(hint)
+    return exc.exit_code
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
@@ -20,11 +31,11 @@ def cmd_probe(args: argparse.Namespace) -> int:
             verify=args.verify_tls,
             follow=not args.no_follow,
         )
+    except ConfigError as exc:
+        # 地址写错是配置问题，别让人去查 Wi-Fi
+        return _fail(args, exc, "提示：地址要写成 http(s)://host[:port]，指到 eportal 入口。")
     except CampusAuthError as exc:
-        _err(str(exc))
-        _say("")
-        _say("提示：探针只从校园网内有效，先连学校 Wi-Fi 再试。")
-        return EXIT_ENV
+        return _fail(args, exc, "提示：探针只从校园网内有效，先连学校 Wi-Fi 再试。")
 
     if args.json:
         _say(to_json(analysis, used))

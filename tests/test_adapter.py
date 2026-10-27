@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from campus_auth.adapters import get_adapter, names
 from campus_auth.adapters.base import Adapter
 from campus_auth.adapters.huuc import ADAPTER as HUUC
 from campus_auth.crypto import xor_unhex
+from campus_auth.errors import ConfigError
 
 IP = "10.152.59.163"
 
@@ -164,3 +166,27 @@ def test_check_rejects_bad_key_style() -> None:
 def test_row_is_mine_by_ip() -> None:
     assert HUUC.row_is_mine({"online_ip": IP}, IP, "0" * 12)
     assert not HUUC.row_is_mine({"online_ip": "10.0.0.1"}, IP, "0" * 12)
+
+
+def test_adapter_can_be_loaded_from_a_file_path(tmp_path: Path) -> None:
+    """`--adapter ./my_school.py:ADAPTER` 是给外校用的逃生舱，必须真能加载。"""
+    module = tmp_path / "my_school.py"
+    module.write_text(
+        "from campus_auth.adapters.base import Adapter\n"
+        'ADAPTER = Adapter(name="my_school", school="某校", base_url="http://10.0.0.9:8080")\n',
+        encoding="utf-8",
+    )
+    adapter = get_adapter(f"{module}:ADAPTER")
+    assert adapter.name == "my_school"
+
+
+def test_missing_adapter_file_says_which_target(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="my_school"):
+        get_adapter(f"{tmp_path / 'my_school.py'}:ADAPTER")
+
+
+def test_adapter_file_without_the_attribute(tmp_path: Path) -> None:
+    module = tmp_path / "empty.py"
+    module.write_text("", encoding="utf-8")
+    with pytest.raises(ConfigError, match="ADAPTER"):
+        get_adapter(f"{module}:ADAPTER")

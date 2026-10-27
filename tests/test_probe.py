@@ -161,7 +161,8 @@ def test_probe_offline(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) ->
         raise TransportError("一条探针都没通")
 
     monkeypatch.setattr(scan, "probe", boom)
-    assert cli.main(["probe", "--url", "http://10.0.0.1"]) == 3
+    # 传输错误按 errors.py 的约定是 4，不是「环境」
+    assert cli.main(["probe", "--url", "http://10.0.0.1"]) == 4
     out = capsys.readouterr()
     assert "校园网内" in out.err + out.out
 
@@ -234,3 +235,15 @@ def test_probe_no_follow_has_no_host_note() -> None:
     transport = DictTransport({"http://10.0.0.1/": "深澜"})
     analysis, _used = probe.probe("http://10.0.0.1", transport=transport, follow=False)
     assert not any("跳转" in note for note in analysis.notes)
+
+
+def test_probe_bad_url_is_a_config_error(campus: Path, capsys) -> None:
+    """地址写错是配置问题（2），别跟「不在校园网」混成一个退出码。"""
+    assert cli.main(["probe", "--url", "nonsense"]) == 2
+    captured = capsys.readouterr()
+    assert "地址" in captured.err
+    assert "校园网" not in captured.out
+
+
+def test_probe_out_of_range_port_is_a_config_error(campus: Path) -> None:
+    assert cli.main(["probe", "--url", "http://h:99999"]) == 2

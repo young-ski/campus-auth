@@ -1,7 +1,7 @@
 """够用的 JSON Schema 子集校验器（draft-07 的一小部分）。
 
 支持：$ref（仅本文件 #/definitions/x）、type（含数组形式）、required、properties、
-items、enum、const、minimum、oneOf。不支持正则、format、allOf —— 我们的 schema 不需要。
+items、enum、const、minimum、anyOf。不支持正则、format、allOf、oneOf —— 我们的 schema 不需要。
 """
 
 from __future__ import annotations

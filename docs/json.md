@@ -1,7 +1,11 @@
 # `--json` 输出格式（schema 1）
 
-给脚本和监控用。`--json` 时 stdout 只有一个 JSON 对象（`watch` 是每行一个事件对象），
-人读的文案要么不出现、要么在 JSON 之前（`watch` 除外，见下）。
+给脚本和监控用。`--json` 时 **stdout 只有一个 JSON 对象**（`watch` 是每行一个事件对象），
+面向人的文案一律进 **stderr**。
+
+支持这件事的只有这七个命令：`probe`、`status`、`login`、`logout`、`unbind`、`check`、`watch`。
+其余命令（`init`、`adapters`、`urls`、`password`、`install`、`uninstall`）**不接受** `--json`，
+argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默吐人话。
 
 **稳定性承诺**
 
@@ -15,9 +19,11 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `schema` | 整数 | 上面那个版本号，恒为 `1` |
+| `ok` | 布尔 | 命令是否成功；失败时用下面「错误形态」的对象 |
 
 退出码仍按 README 的表：成功 0、被拒/未在线 1、配置 2、环境 3、传输 4。
 **判断成败请看 `ok` / 退出码，不要解析 `msg`。**
+人读文案在 stderr：`2>/dev/null` 会看不到提示，但 stdout 始终可解析。
 
 ---
 
@@ -28,6 +34,7 @@
 ```json
 {
   "schema": 1,
+  "ok": true,
   "target": "http://10.210.213.208:802",
   "verdict": "drcom",
   "is_drcom": true,
@@ -40,6 +47,8 @@
   "notes": []
 }
 ```
+
+一条探针都没通时是错误形态（`ok: false` + `error`），退出码 3（不在校园网）或 4（传输失败）。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -99,6 +108,22 @@
 | `ret_code` | 整数 \| null | 服务端返回码，门户不给则为 `null` |
 | `hint` | 字符串 | 把含糊报错翻译成人话，没有则为空串 |
 | `ip` | 字符串 | 本次认证使用的 IP |
+| `already_online` | 布尔 | 本轮之前就已经在线，没有真的发认证；此时 `ok` 为 `true` |
+
+## `check --json`
+
+只判定在线，不看会话内容，最适合监控轮询。
+
+```json
+{ "schema": 1, "ok": false, "online": false }
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `ok` | 布尔 | 与 `online` 同值，方便统一用 `jq -e .ok` |
+| `online` | 布尔 | 本机（IP 与账号都对上）是否在线 |
+
+查在线这一步本身失败时是错误形态，错误对象里同样带 `online: false`。
 
 ## `logout --json` / `unbind --json`
 

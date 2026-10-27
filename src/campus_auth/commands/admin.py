@@ -44,6 +44,8 @@ def cmd_adapters(_: argparse.Namespace) -> int:
         _say(f"{name:10} {adapter.school}  [{adapter.status}]  <{adapter.base_url}>")
         if adapter.notes:
             _say(f"{'':10} {adapter.notes}")
+    _say("")
+    _say("别的学校（含社区放在自己仓库的）见 docs/schools.md；加一行不用权限。")
     return EXIT_OK
 
 

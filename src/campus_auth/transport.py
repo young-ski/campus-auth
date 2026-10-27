@@ -34,6 +34,11 @@ def ssl_context(verify: bool) -> ssl.SSLContext:
     return ctx
 
 
+def _lower_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """头名统一小写：展平成普通 dict 后就丢了 `Message` 的大小写无关性。"""
+    return {key.lower(): value for key, value in headers.items()}
+
+
 @dataclass
 class Response:
     status: int
@@ -81,11 +86,11 @@ class UrllibTransport:
                 return Response(
                     response.status,
                     response.read(limit).decode("utf-8", "replace"),
-                    dict(response.headers.items()),
+                    _lower_headers(response.headers),
                 )
         except urllib.error.HTTPError as exc:
             return Response(
-                exc.code, exc.read(limit).decode("utf-8", "replace"), dict(exc.headers.items())
+                exc.code, exc.read(limit).decode("utf-8", "replace"), _lower_headers(exc.headers)
             )
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise TransportError(str(exc)) from exc

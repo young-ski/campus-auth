@@ -107,6 +107,7 @@ pip install "campus-auth @ git+https://github.com/young-ski/campus-auth"
 ```
 
 没有 pip 的机器用单文件：从 Releases 下 `campus-auth.pyz`，`python campus-auth.pyz status`。
+同一个 Release 里带 `SHA256SUMS`，`sha256sum -c SHA256SUMS` 能先核对再跑。
 
 ## 配置
 

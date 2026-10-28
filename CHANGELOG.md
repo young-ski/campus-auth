@@ -2,7 +2,7 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
-## 未发布
+## 1.4.0
 
 **破坏性**：`--json` 的 stdout 现在是纯 JSON，面向人的文案全部改走 stderr。`init` /
 `adapters` / `urls` / `password` / `install` / `uninstall` 不再接受 `--json`（会直接报
@@ -12,6 +12,15 @@
 
 - `--adapter` 现在也能直接给文件路径（`路径.py:ADAPTER`），`module:attr` 的模块名照旧。
   配套 [`docs/schools.md`](docs/schools.md)：社区适配层目录，放外面跑通也登记得进去
+
+### 发布
+
+- `publish.yml` 现在先跑测试、校验版本三方一致（tag / `pyproject.toml` / `__init__`），
+  再构建、上传、自己建 Release 并挂上 pyz 与 `SHA256SUMS`。`workflow_dispatch` 不再能
+  整段绕过版本校验。
+- 单文件 pyz 改由 `tools/build_zipapp.py` 构建，排除 `__pycache__` / `*.pyc` / `*.egg-info`：
+  402 KB → 53 KB，条目 71 → 30。
+- 新增 `tools/check_version.py`；CI 的冒烟步骤改用同一个打包脚本，避免发布与 CI 各走一套。
 
 ### 修复
 

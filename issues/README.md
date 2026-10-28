@@ -1,6 +1,6 @@
 # 待提交 issue（2 周档）
 
-16 个单子，覆盖二轮体检里所有 S1–S4 的运行时问题；外加 1 个文档单（Q3 决策的落地产物）。全部已在本机复现，行号对得上当前 HEAD（`4f09b31`）。
+16 个单子，覆盖二轮体检里所有 S1–S4 的运行时问题；外加 1 个文档单（Q3 决策）与 2 个发布链单（6 周档）。全部已在本机复现，行号对得上当前 HEAD（`4f09b31`）。
 
 **已拍板**：Q1 = 门户为准（`01` 含兜底）、Q2 = `--json` 是稳定 API（`15` 含六条命令拒绝该 flag）、Q3 = 主仓 + 文档化逃生舱（`17`），`entry_points` 挂条件后置。
 
@@ -27,6 +27,8 @@
 | 3 | `14-dead-code-and-false-docstrings.md` ✅ | S1 | 0.5d | `tech-debt` `good first issue` |
 | 3 | `16-probe-exit-code-split.md` ✅ | S3 | 0.5d | `bug` `probe` `dx` |
 | 3 | `17-adapter-escape-hatch-docs.md` ✅ | S2 | 0.5d | `docs` `adapter` |
+| 4 | `18-release-guard.md` ✅ | S2 | 1d | `ci` `release` |
+| 4 | `19-zipapp-automation.md` ✅ | S2 | 1d | `ci` `release` |
 
 ## 依赖关系
 

@@ -97,7 +97,7 @@ class Adapter:
     callback_prefix: str = "dr"
     timeout: float = 20.0
     verify_tls: bool = False
-    status: str = "已验证"
+    status: str = "未验证"
     notes: str = ""
 
     # ---------- 编码 ----------

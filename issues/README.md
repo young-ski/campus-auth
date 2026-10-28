@@ -29,6 +29,7 @@
 | 3 | `17-adapter-escape-hatch-docs.md` ✅ | S2 | 0.5d | `docs` `adapter` |
 | 4 | `18-release-guard.md` ✅ | S2 | 1d | `ci` `release` |
 | 4 | `19-zipapp-automation.md` ✅ | S2 | 1d | `ci` `release` |
+| 4 | `20-new-adapter-scaffold.md` ✅ | S3 | 1d | `adapter` `dx` |
 
 ## 依赖关系
 
@@ -73,6 +74,7 @@ gh issue create \
 - C12 自启真跑：CI 在 Windows/macOS 真装真卸并用原生 shell 核实
 - C13 `doctor`：一次摊开排障现场，密码只报来源
 - C15 `SECURITY.md`、PR 模板、bug 模板补安装方式与 probe 输出
+- C11 `new-adapter` 脚手架与「未验证」默认状态（单子见 `20-new-adapter-scaffold.md`）
 
 ## 暂不在这批
 

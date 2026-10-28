@@ -8,6 +8,7 @@ import pytest
 from fake_transport import patch_send
 
 from campus_auth import cli, net
+from campus_auth.adapters import get_adapter
 from campus_auth.cli import _parser
 from campus_auth.portal import Portal
 
@@ -853,4 +854,42 @@ def test_doctor_says_where_the_password_came_from(
 def test_doctor_is_not_a_json_command(campus: Path) -> None:
     with pytest.raises(SystemExit) as caught:
         run(["doctor", "--json"])
+    assert caught.value.code == 2
+
+
+# ---------- new-adapter 脚手架 ----------
+
+
+def test_new_adapter_writes_a_loadable_skeleton(tmp_path: Path, capsys) -> None:
+    out = tmp_path / "out"
+    assert run(["new-adapter", "hncj", "--dir", str(out)]) == 0
+    path = out / "hncj.py"
+    assert path.is_file()
+    text = path.read_text(encoding="utf-8")
+    assert 'status="未验证"' in text
+    assert "TODO" in text or "必改" in text
+    adapter = get_adapter(f"{path}:ADAPTER")
+    assert adapter.name == "hncj"
+    assert adapter.status == "未验证"
+    printed = capsys.readouterr().out
+    assert "--adapter" in printed
+    assert "BUILTIN" in printed
+
+
+def test_new_adapter_rejects_bad_names(tmp_path: Path, capsys) -> None:
+    for bad in ("Foo", "a-b", "9x"):
+        assert run(["new-adapter", bad, "--dir", str(tmp_path)]) == 2
+    assert "代号" in capsys.readouterr().err
+
+
+def test_new_adapter_does_not_overwrite_without_force(tmp_path: Path, capsys) -> None:
+    assert run(["new-adapter", "hncj", "--dir", str(tmp_path)]) == 0
+    assert run(["new-adapter", "hncj", "--dir", str(tmp_path)]) == 2
+    assert "--force" in capsys.readouterr().err
+    assert run(["new-adapter", "hncj", "--dir", str(tmp_path), "--force"]) == 0
+
+
+def test_new_adapter_is_not_a_json_command(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(["new-adapter", "hncj", "--dir", str(tmp_path), "--json"])
     assert caught.value.code == 2

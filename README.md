@@ -203,8 +203,8 @@ campus-auth uninstall           # 停掉并删干净
 
 ## 加一所学校
 
-`generic` 就是模板：复制成 `<学校代号>.py`，按 F12 抓到的真请求改 `base_url`、参数名、
-密钥函数，再到 `adapters/__init__.py` 登记。步骤和验收清单见
+先跑 `campus-auth new-adapter <代号>`：生成的骨架带必改清单，改完在
+`adapters/__init__.py` 登记。手抄的模板是 `generic`。步骤和验收清单见
 [`CONTRIBUTING.md`](CONTRIBUTING.md)，那里也写了哪些东西不能提交（真实学号、密码、MAC）。
 
 **不想改主仓，或还没准备 PR**：`--adapter` 也能直接从自己的文件加载（`路径.py:属性名`，

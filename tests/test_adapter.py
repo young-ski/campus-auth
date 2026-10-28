@@ -190,3 +190,15 @@ def test_adapter_file_without_the_attribute(tmp_path: Path) -> None:
     module.write_text("", encoding="utf-8")
     with pytest.raises(ConfigError, match="ADAPTER"):
         get_adapter(f"{module}:ADAPTER")
+
+
+def test_new_adapters_default_to_unverified() -> None:
+    """默认 `已验证` 会让 `adapters` 列表撒谎。"""
+    bare = Adapter(name="x", school="某校", base_url="http://10.0.0.1:8080")
+    assert bare.status == "未验证"
+
+
+def test_builtin_statuses_are_explicit() -> None:
+    """默认改成「未验证」之后，已实机验证过的那所必须自己说清楚。"""
+    assert get_adapter("huuc").status == "已验证"
+    assert get_adapter("generic").status == "模板"

@@ -22,6 +22,7 @@ from .commands import (
     cmd_install,
     cmd_login,
     cmd_logout,
+    cmd_new_adapter,
     cmd_password,
     cmd_probe,
     cmd_status,
@@ -179,6 +180,17 @@ def _parser() -> argparse.ArgumentParser:
         help="不给 --url 时别从劫持页找地址，直接用适配层默认值",
     )
     probe_p.set_defaults(func=cmd_probe)
+
+    new_adapter = sub.add_parser(
+        "new-adapter",
+        parents=[plain],
+        help="按代号生成一个适配层骨架",
+        description="生成带必改清单的骨架；默认写进 adapters/，目录不存在就写当前目录。",
+    )
+    new_adapter.add_argument("name", metavar="代号")
+    new_adapter.add_argument("--dir", metavar="目录", help="写到哪个目录")
+    new_adapter.add_argument("-f", "--force", action="store_true", help="覆盖已有文件")
+    new_adapter.set_defaults(func=cmd_new_adapter)
 
     urls = sub.add_parser(
         "urls",

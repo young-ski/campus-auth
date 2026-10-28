@@ -47,6 +47,7 @@ class HuucAdapter(Adapter):
             account_prefix=",0,",
             operator_suffixes={"cmcc": "@cmcc", "unicom": "@unicom", "dx": "@dx"},
             js_version="4.2.1",
+            status="已验证",
             notes=f"门户 IP {PORTAL_IP}；netauth.huuc.edu.cn:802。",
         )
 

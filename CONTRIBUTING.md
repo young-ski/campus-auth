@@ -8,13 +8,15 @@
 ## 加一所学校
 
 0. **先跑 `campus-auth probe --url <门户地址>`**。判成 Dr.COM 再往下；判成别的说明不在范围。
-1. 复制 `src/campus_auth/adapters/example_generic.py` 成 `你的学校代号.py`（小写拼音缩写，
-   例如 `hncj`）。它是**可继承的子类骨架**，按注释覆盖方法，别改 core。
+1. 跑 `campus-auth new-adapter hncj`（代号用小写拼音缩写）。它会写一个可加载的骨架，
+   带必改清单和 `status="未验证"`，并打印验连通的命令。想手抄就看
+   `src/campus_auth/adapters/example_generic.py`，别改 core。
 2. 打开浏览器 F12 → Network，作为**普通用户**点一次登录，把真实请求抄下来。
    - 参数名不同 → 覆盖 `account_params()` / `identity_params()`，或整个 `login_request()`
    - 值像 `%1a%2f...` 这样的十六进制 → `key_style = "ip-xor"`，把密钥算法写进 `encoder()`
    - 返回的不是 JSON → 覆盖 `interpret_login()` 和 `hint_for()`
-3. 在 `adapters/__init__.py` 的 `BUILTIN` 里登记。
+3. 在 `adapters/__init__.py` 的 `BUILTIN` 里登记，把 `status` 改成 `已验证`，并在
+   [`docs/schools.md`](docs/schools.md) 记一行。
 4. 跑 `pytest`，再跑一遍 `campus-auth status --adapter 你的代号` 做真机确认。
 5. 提 PR，标题写 `adapter: <学校>`，正文附一段打码后的请求/响应样本。
 

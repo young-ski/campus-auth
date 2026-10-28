@@ -2,7 +2,7 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
-## 1.4.0
+## 1.4.0（2026-10-28）
 
 **破坏性**：`--json` 的 stdout 现在是纯 JSON，面向人的文案全部改走 stderr。`init` /
 `adapters` / `urls` / `password` / `install` / `uninstall` 不再接受 `--json`（会直接报

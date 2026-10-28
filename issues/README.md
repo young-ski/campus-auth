@@ -67,6 +67,13 @@ gh issue create \
 - 没有红过的断言不算验收，评审时可以要求补 `git stash` 前后的对比。
 - `14` 可拆成 6 个独立 PR，其余一单一 PR。
 
+## 6 周档（无单独单子，已实现）
+
+- C10 首成功路径：`probe` 自举发现门户、`init --url`、README 首屏外校分支
+- C12 自启真跑：CI 在 Windows/macOS 真装真卸并用原生 shell 核实
+- C13 `doctor`：一次摊开排障现场，密码只报来源
+- C15 `SECURITY.md`、PR 模板、bug 模板补安装方式与 probe 输出
+
 ## 暂不在这批
 
 - `--show-secrets` 位置、README 事实修正、CHANGELOG 去重 → 已并入 `14` 或另批文档 PR。

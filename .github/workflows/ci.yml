@@ -105,23 +105,40 @@ jobs:
       - name: 真装
         shell: bash
         run: campus-auth install --config "$RUNNER_TEMP/c.toml"
-      - name: 装上了吗
+      # 核实用各自的原生 shell：bash 在 Windows 上会把 `/v` 当路径改写，
+      # $APPDATA 里的反斜杠也不是 bash 的路径分隔符
+      - name: 装上了吗（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          if (-not (Get-ItemProperty -Path $run -Name campus-auth-watch).'campus-auth-watch') {
+            throw 'Run 键里没有登记'
+          }
+          $shim = Join-Path $env:APPDATA 'campus-auth\campus-auth-watch.cmd'
+          if (-not (Test-Path $shim)) { throw "shim 不在: $shim" }
+          if (-not (Select-String -Path $shim -Pattern ':loop' -Quiet)) { throw 'shim 里没有重启循环' }
+      - name: 装上了吗（macOS）
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v campus-auth-watch
-            test -f "$APPDATA/campus-auth/campus-auth-watch.cmd"
-          else
-            launchctl list | grep campus-auth
-            test -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
-          fi
-      - name: 卸载后要干净
+          launchctl list | grep campus-auth
+          test -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
+      - name: 卸载
         shell: bash
+        run: campus-auth uninstall --config "$RUNNER_TEMP/c.toml"
+      - name: 卸载后要干净（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          campus-auth uninstall --config "$RUNNER_TEMP/c.toml"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            ! reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v campus-auth-watch
-            test ! -f "$APPDATA/campus-auth/campus-auth-watch.cmd"
-          else
-            test ! -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
-          fi
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          if ((Get-ItemProperty -Path $run -Name campus-auth-watch -ErrorAction SilentlyContinue)) {
+            throw 'Run 键没删掉'
+          }
+          if (Test-Path (Join-Path $env:APPDATA 'campus-auth\campus-auth-watch.cmd')) {
+            throw 'shim 没删掉'
+          }
+      - name: 卸载后要干净（macOS）
+        if: runner.os == 'macOS'
+        shell: bash
+        run: test ! -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"

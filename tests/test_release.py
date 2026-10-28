@@ -140,3 +140,9 @@ def test_ci_installs_and_uninstalls_for_real() -> None:
     assert "campus-auth install" in ci
     assert "campus-auth uninstall" in ci
     assert "reg query" in ci or "launchctl" in ci  # 装完得真去核一遍
+
+
+def test_windows_install_check_quotes_the_property_name() -> None:
+    """`(Get-ItemProperty ...).campus-auth-watch` 会被解析成 .campus - auth - watch。"""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert ".'campus-auth-watch'" in ci

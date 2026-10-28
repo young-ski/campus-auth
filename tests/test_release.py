@@ -146,3 +146,33 @@ def test_windows_install_check_quotes_the_property_name() -> None:
     """`(Get-ItemProperty ...).campus-auth-watch` 会被解析成 .campus - auth - watch。"""
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert ".'campus-auth-watch'" in ci
+
+
+def test_release_notes_slice_the_version_section() -> None:
+    result = subprocess.run(
+        [sys.executable, "-X", "utf8", "tools/release_notes.py", "v1.7.0"],
+        cwd=ROOT,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "entry point" in result.stdout  # 1.7.0 的正文
+    assert result.stdout.strip() != "v1.7.0"
+
+
+def test_release_notes_accept_a_date_suffixed_heading() -> None:
+    """标题带日期（`## 1.7.0（2026-10-28）`）时以前会整段匹配失败。"""
+    from release_notes import notes_for
+
+    text = "## 1.7.0（2026-10-28）\n\n- 甲\n\n## 1.7.01\n\n- 乙\n"
+    assert notes_for("v1.7.0", text) == "- 甲"
+
+
+def test_release_notes_fail_on_unknown_version() -> None:
+    result = subprocess.run(
+        [sys.executable, "-X", "utf8", "tools/release_notes.py", "v9.9.9"],
+        cwd=ROOT,
+        capture_output=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 1

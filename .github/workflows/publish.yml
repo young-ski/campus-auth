@@ -60,22 +60,8 @@ jobs:
           path: artifact/
       - name: 从 CHANGELOG 切出本版说明
         run: |
-          python - "$GITHUB_REF_NAME" > notes.md <<'PY'
-          import sys
-          from pathlib import Path
-
-          version = sys.argv[1].removeprefix("v")
-          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
-          body, keep = [], False
-          for line in text.splitlines():
-              if line.startswith("## "):
-                  keep = line.strip() == f"## {version}"
-                  continue
-              if keep:
-                  body.append(line)
-          print("\n".join(body).strip() or f"v{version}")
-          PY
-          # dispatch 没有 tag 时 CHANGELOG 也对不上，退回最近一条提交标题
+          python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md || true
+          # 切不出来（dispatch、或 CHANGELOG 漏写）时退回最近一条提交标题
           test -s notes.md || git log -1 --format=%s > notes.md
       - name: 建 Release 并挂上 pyz 与校验和
         env:

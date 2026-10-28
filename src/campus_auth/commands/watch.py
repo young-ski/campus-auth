@@ -55,7 +55,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return build(config).portal
 
     def report(cycle: Cycle, index: int) -> None:
-        stamp = time.strftime("%H:%M:%S")
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
         took = f"{cycle.elapsed:.1f}s"
         if args.json:
             _dump(

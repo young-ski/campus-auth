@@ -247,3 +247,26 @@ def test_probe_bad_url_is_a_config_error(campus: Path, capsys) -> None:
 
 def test_probe_out_of_range_port_is_a_config_error(campus: Path) -> None:
     assert cli.main(["probe", "--url", "http://h:99999"]) == 2
+
+
+def test_probe_retries_a_failing_sample(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--retries` 以前挂在 help 里但没人用。"""
+    from fake_transport import DictTransport
+
+    calls = {"n": 0}
+
+    class Flaky(DictTransport):
+        def send(self, url, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise TransportError("超时")
+            return super().send(url, **kwargs)
+
+    pages = {
+        "http://10.0.0.1/": "城市热点 Dr.COM dr1003 enc_pwd getkey",
+        "http://10.0.0.1/eportal/index.jsp": "",
+        "http://10.0.0.1/eportal/portal/online_list?callback=probe1003&lang=zh": "",
+        "http://10.0.0.1/eportal/InterFace.do?method=getOnlineUserInfo": "",
+    }
+    analysis, _ = probe.probe("http://10.0.0.1", transport=Flaky(pages), retries=1)
+    assert analysis.is_drcom

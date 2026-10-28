@@ -918,3 +918,26 @@ def test_adapters_survives_a_broken_entry_point(
     assert "huuc" in out
     assert "broken" in out
     assert "NOPE" in out
+
+
+def test_watch_log_line_carries_the_date(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """跨夜排障时只有 HH:MM:SS 定位不了。"""
+    import re
+
+    fake_portal(monkeypatch)
+    run(["watch", "--once"])
+    out = capsys.readouterr().out
+    assert re.search(r"\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]", out)
+
+
+def test_login_does_not_sleep_after_confirming(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """确认成功就立刻收工，别再白等 0.8 秒。"""
+    fake_portal(monkeypatch)
+    slept: list[float] = []
+    monkeypatch.setattr("time.sleep", slept.append)
+    assert run(["login", "-a", "1", "-p", "p"]) == 0
+    assert slept == []

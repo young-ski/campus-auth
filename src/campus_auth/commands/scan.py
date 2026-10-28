@@ -48,6 +48,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
             timeout=args.timeout or 8.0,
             verify=args.verify_tls,
             follow=not args.no_follow,
+            retries=getattr(args, "retries", 0) or 0,
         )
     except ConfigError as exc:
         # 地址写错是配置问题，别让人去查 Wi-Fi

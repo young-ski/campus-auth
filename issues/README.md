@@ -76,6 +76,7 @@ gh issue create \
 - C15 `SECURITY.md`、PR 模板、bug 模板补安装方式与 probe 输出
 - C11 `new-adapter` 脚手架与「未验证」默认状态（单子见 `20-new-adapter-scaffold.md`）
 - C19 第三方适配层包（entry point 组）、C20 学校目录收录标准与 README 英文首屏
+- C14 日志时间戳带日期、C18 `probe --retries` 接线
 
 ## 暂不在这批
 

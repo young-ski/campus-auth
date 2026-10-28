@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.parse
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -254,6 +255,7 @@ def collect(
     verify: bool = False,
     transport: Transport | None = None,
     follow: bool = True,
+    retries: int = 0,
     info: dict[str, object] | None = None,
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓 1 个 JS（可跨源，路径由页面自己给）。
@@ -271,7 +273,16 @@ def collect(
     send = transport or UrllibTransport(verify_tls=verify)
 
     def fetch(url: str, limit: int = MAX_BODY) -> Response:
-        return send.send(url, timeout=timeout, limit=limit)
+        last: Exception | None = None
+        for attempt in range(max(0, retries) + 1):
+            try:
+                return send.send(url, timeout=timeout, limit=limit)
+            except TransportError as exc:
+                last = exc
+                if attempt < retries:
+                    time.sleep(0.5 * (attempt + 1))
+        assert last is not None
+        raise last
 
     samples: dict[str, str] = {}
     server = ""
@@ -329,10 +340,17 @@ def probe(
     verify: bool = False,
     transport: Transport | None = None,
     follow: bool = True,
+    retries: int = 0,
 ) -> tuple[Analysis, str]:
     info: dict[str, object] = {}
     samples, server, port = collect(
-        base_url, timeout=timeout, verify=verify, transport=transport, follow=follow, info=info
+        base_url,
+        timeout=timeout,
+        verify=verify,
+        transport=transport,
+        follow=follow,
+        retries=retries,
+        info=info,
     )
     analysis = analyze(samples, server=server, port=port)
     followed = info.get("followed")

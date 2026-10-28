@@ -77,6 +77,7 @@ gh issue create \
 - C11 `new-adapter` 脚手架与「未验证」默认状态（单子见 `20-new-adapter-scaffold.md`）
 - C19 第三方适配层包（entry point 组）、C20 学校目录收录标准与 README 英文首屏
 - C14 日志时间戳带日期、C18 `probe --retries` 接线
+- C17 只做了一半：`MAX_JS` 的假注释已改（issues/14）。追跳转**不限同源**是故意的 —— 真实门户常从网关 IP 跳到门户域名，限同源反而坏
 
 ## 暂不在这批
 

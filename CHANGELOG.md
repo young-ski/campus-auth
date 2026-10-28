@@ -2,6 +2,14 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 1.7.0（2026-10-28）
+
+### 新增
+
+- 支持第三方适配层包：在 `.dist-info` 里把名字注册到 `campus_auth.adapters` entry point 组，
+  `--adapter <名字>` 就能选到；同名时内置优先。`adapters` 列表也一并列出
+- README 首屏加英文说明；`docs/schools.md` 补收录标准
+
 ## 1.6.0（2026-10-28）
 
 ### 新增

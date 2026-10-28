@@ -75,6 +75,7 @@ gh issue create \
 - C13 `doctor`：一次摊开排障现场，密码只报来源
 - C15 `SECURITY.md`、PR 模板、bug 模板补安装方式与 probe 输出
 - C11 `new-adapter` 脚手架与「未验证」默认状态（单子见 `20-new-adapter-scaffold.md`）
+- C19 第三方适配层包（entry point 组）、C20 学校目录收录标准与 README 英文首屏
 
 ## 暂不在这批
 

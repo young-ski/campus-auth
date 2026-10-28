@@ -893,3 +893,28 @@ def test_new_adapter_is_not_a_json_command(tmp_path: Path) -> None:
     with pytest.raises(SystemExit) as caught:
         run(["new-adapter", "hncj", "--dir", str(tmp_path), "--json"])
     assert caught.value.code == 2
+
+
+def test_adapters_survives_a_broken_entry_point(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """装坏的第三方包不该让 `adapters` 整个列不出来。"""
+    from importlib import metadata
+
+    from campus_auth import adapters as adapters_mod
+
+    class P(list):
+        def select(self, **kwargs):
+            return self
+
+    class Bad:
+        name = "broken"
+        value = "campus_auth.adapters.huuc:NOPE"
+
+    monkeypatch.setattr(adapters_mod, "_external", None)
+    monkeypatch.setattr(metadata, "entry_points", lambda **k: P([Bad()]))
+    assert run(["adapters"]) == 0
+    out = capsys.readouterr().out
+    assert "huuc" in out
+    assert "broken" in out
+    assert "NOPE" in out

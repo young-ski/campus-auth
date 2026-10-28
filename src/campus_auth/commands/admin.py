@@ -47,7 +47,11 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_adapters(_: argparse.Namespace) -> int:
     for name in adapters.names():
-        adapter = adapters.get_adapter(name)
+        try:
+            adapter = adapters.get_adapter(name)
+        except CampusAuthError as exc:  # 第三方包装坏了也要把别的列出来
+            _say(f"{name:10} [加载失败]  {exc}")
+            continue
         _say(f"{name:10} {adapter.school}  [{adapter.status}]  <{adapter.base_url}>")
         if adapter.notes:
             _say(f"{'':10} {adapter.notes}")

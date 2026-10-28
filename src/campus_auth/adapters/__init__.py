@@ -4,6 +4,10 @@
 加载（写学校适配层时不必改本文件，PR 之外自用也够）。
 
 文件路径按 `路径.py:ADAPTER` 写；`module:attr` 里的模块名按普通 import 解析。
+
+第三方包也能用：把 `<名字> = 模块:属性` 注册到 `campus_auth.adapters` 这个 entry point 组，
+装完就能用 `--adapter <名字>` 选到。同名时内置优先，免得装了包把 huuc 顶掉。
+entry point 意味着执行已安装的代码 —— 与 `pip install` 一样的信任前提。
 """
 
 from __future__ import annotations
@@ -25,7 +29,11 @@ BUILTIN: Final[dict[str, str]] = {
 # 外部文件的模块名要唯一，否则同名文件会互相顶掉 sys.modules 里的条目
 FILE_PREFIX = "campus_auth_external_"
 
+# 第三方适配层包的 entry point 组
+GROUP = "campus_auth.adapters"
+
 _cache: dict[str, Adapter] = {}
+_external: dict[str, str] | None = None
 
 
 def _import_module(module_path: str) -> object:
@@ -49,6 +57,23 @@ def _import_module(module_path: str) -> object:
         return importlib.import_module(module_path)
     except ImportError as exc:
         raise ConfigError(f"导出适配层失败（{module_path}）: {exc}") from exc
+
+
+def _entry_points() -> dict[str, str]:
+    """已安装包声明的适配层：名字 -> `模块:属性`。扫不出来就当没有。"""
+    global _external
+    if _external is not None:
+        return _external
+    _external = {}
+    try:
+        from importlib import metadata
+
+        points = metadata.entry_points(group=GROUP)
+    except Exception:  # 老版本 API、坏掉的安装元数据
+        return _external
+    for point in points:
+        _external.setdefault(point.name, point.value)
+    return _external
 
 
 def _load_target(target: str) -> Adapter:
@@ -75,15 +100,19 @@ def get_adapter(name: str) -> Adapter:
     if name in _cache:
         return _cache[name]
     target = name if ":" in name else BUILTIN.get(name, "")
+    if not target and ":" not in name:
+        target = _entry_points().get(name, "")
     if not target:
-        raise ConfigError(f"没有适配层 {name!r}，内置的有: {', '.join(BUILTIN)}")
+        raise ConfigError(
+            f"没有适配层 {name!r}，内置的有: {', '.join(BUILTIN)}；第三方适配层看 docs/schools.md"
+        )
     adapter = _load_target(target)
     _cache[name] = adapter
     return adapter
 
 
 def names() -> list[str]:
-    return sorted(BUILTIN)
+    return sorted({*BUILTIN, *_entry_points()})
 
 
 __all__ = ["Adapter", "LoginResult", "Param", "BUILTIN", "get_adapter", "names"]

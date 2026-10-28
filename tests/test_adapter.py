@@ -202,3 +202,56 @@ def test_builtin_statuses_are_explicit() -> None:
     """默认改成「未验证」之后，已实机验证过的那所必须自己说清楚。"""
     assert get_adapter("huuc").status == "已验证"
     assert get_adapter("generic").status == "模板"
+
+
+class _FakeEntryPoint:
+    def __init__(self, name: str, value: str) -> None:
+        self.name = name
+        self.value = value
+
+
+@pytest.fixture
+def fake_entry_points(monkeypatch: pytest.MonkeyPatch):
+    """让 entry_points() 返回指定条目；返回安装列表，测试往里塞。"""
+    from importlib import metadata
+
+    from campus_auth import adapters as adapters_mod
+
+    monkeypatch.setattr(adapters_mod, "_external", None)
+    installed: list[_FakeEntryPoint] = []
+
+    class FakePoints(list):
+        def select(self, **kwargs):
+            assert kwargs["group"] == "campus_auth.adapters"
+            return self
+
+    def fake(group=None):
+        return FakePoints(installed)
+
+    monkeypatch.setattr(metadata, "entry_points", fake)
+    return installed
+
+
+def test_entry_point_adapter_is_loadable(fake_entry_points) -> None:
+    fake_entry_points.append(_FakeEntryPoint("hncj", "campus_auth.adapters.huuc:ADAPTER"))
+    adapter = get_adapter("hncj")
+    assert adapter.name == "huuc"  # 借 huuc 的实例，名字不重要
+    assert "hncj" in names()
+
+
+def test_entry_point_without_the_attribute_says_so(fake_entry_points) -> None:
+    fake_entry_points.append(_FakeEntryPoint("broken", "campus_auth.adapters.huuc:NOPE"))
+    with pytest.raises(ConfigError, match="NOPE"):
+        get_adapter("broken")
+
+
+def test_builtin_wins_over_an_entry_point_of_the_same_name(fake_entry_points) -> None:
+    fake_entry_points.append(
+        _FakeEntryPoint("huuc", "campus_auth.adapters.example_generic:ADAPTER")
+    )
+    assert get_adapter("huuc") is HUUC
+
+
+def test_names_lists_entry_points(fake_entry_points) -> None:
+    fake_entry_points.append(_FakeEntryPoint("zzz", "campus_auth.adapters.huuc:ADAPTER"))
+    assert "zzz" in names()

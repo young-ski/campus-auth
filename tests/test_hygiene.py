@@ -85,3 +85,21 @@ def test_readme_lists_doctor_and_points_at_security() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "doctor" in text
     assert "SECURITY.md" in text
+
+
+def test_readme_has_an_english_first_screen() -> None:
+    """README 全中文，非中文读者第一屏就掉队。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    head = text[:4000]
+    assert "**English**" in head
+
+
+def test_school_catalog_states_its_entry_criteria() -> None:
+    text = (ROOT / "docs" / "schools.md").read_text(encoding="utf-8")
+    assert "收录标准" in text
+    assert "probe" in text
+
+
+def test_readme_says_how_to_install_a_third_party_adapter() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "entry point" in text.lower() or "entry_points" in text

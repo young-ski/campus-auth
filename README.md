@@ -9,6 +9,13 @@
 
 > A CLI client for Dr.COM/eportal campus captive portals (Chinese campus networks).
 
+> **English** — Logs in to a Dr.COM/eportal campus portal with one command and reconnects when the
+> session drops. Windows / macOS / Linux, Python ≥ 3.11, no runtime dependencies.
+> **Dr.COM only**: run `campus-auth probe` to see whether your campus is one; other portals are
+> named and you stop there. Covered schools: [`docs/schools.md`](docs/schools.md). Porting another
+> school is one file — `campus-auth new-adapter <code>` ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
+> `--json` on every read command, exit codes are a contract, passwords go to the OS keyring.
+
 ```
 $ campus-auth login -w cmcc
 IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
@@ -214,6 +221,9 @@ campus-auth uninstall           # 停掉并删干净
 ```bash
 campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
 ```
+
+打成了包也可以 `pip install`，再把名字注册到 `campus_auth.adapters` 这个 entry point 组，
+`--adapter <名字>` 就能选到。entry point 等于执行已安装的代码，信任前提与 `pip install` 一样。
 
 ## 已知限制
 

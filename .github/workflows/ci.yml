@@ -68,10 +68,12 @@ jobs:
           campus-auth init -o /tmp/x.toml
           grep -q 'adapter = "huuc"' /tmp/x.toml
           sed -i 's/^account = ""/account = "0814"/' /tmp/x.toml
-      - name: 单文件 zipapp 可构建、可运行
+      - name: 单文件 zipapp 可构建、可运行（与发布同一脚本）
         run: |
-          python -m zipapp src -m campus_auth.cli:main -o /tmp/campus-auth.pyz
+          python tools/build_zipapp.py /tmp/campus-auth.pyz
           python /tmp/campus-auth.pyz adapters
+      - name: 版本一致性
+        run: python tools/check_version.py
       - name: install 产物的转义自检
         run: python tools/check_install_artifacts.py
       - name: install --dry-run 能给出产物

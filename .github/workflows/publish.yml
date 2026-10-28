@@ -17,30 +17,75 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install build twine
-      - name: 版本要和 tag 一致
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          test "$TAG" = "$VER" || { echo "tag $TAG 与 pyproject 版本 $VER 不一致"; exit 1; }
+      - run: python -m pip install -e ".[dev]"
+      # 版本对不上一律先停；dispatch 没有 tag，传空串只比两处源码
+      - name: 版本一致（pyproject / __init__ / tag）
+        run: python tools/check_version.py "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
+      - run: pytest -q
       - run: python -m build
       - run: python -m twine check dist/*
+      - name: 单文件 pyz（排除构建残留）与校验和
+        run: python tools/build_zipapp.py artifact/campus-auth.pyz
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact
+          path: artifact/
 
   publish:
-    name: 上传 PyPI
+    name: 上传 PyPI 并建 Release
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write # PyPI 可信发布，不需要 token
+      contents: write # 建 Release 要用
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: 上传 PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifact
+          path: artifact/
+      - name: 从 CHANGELOG 切出本版说明
+        run: |
+          python - "$GITHUB_REF_NAME" > notes.md <<'PY'
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1].removeprefix("v")
+          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          body, keep = [], False
+          for line in text.splitlines():
+              if line.startswith("## "):
+                  keep = line.strip() == f"## {version}"
+                  continue
+              if keep:
+                  body.append(line)
+          print("\n".join(body).strip() or f"v{version}")
+          PY
+          # dispatch 没有 tag 时 CHANGELOG 也对不上，退回最近一条提交标题
+          test -s notes.md || git log -1 --format=%s > notes.md
+      - name: 建 Release 并挂上 pyz 与校验和
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            gh release create "$GITHUB_REF_NAME" \
+              artifact/campus-auth.pyz artifact/SHA256SUMS \
+              --title "$GITHUB_REF_NAME" --notes-file notes.md
+          else
+            echo "dispatch 运行没有 tag，不建 Release（pyz 见本次 artifact）"
+            ls -l artifact
+          fi

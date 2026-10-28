@@ -6,9 +6,11 @@ import argparse
 
 from .. import adapters
 from ..config import load
+from ..discover import TIMEOUT, discover_portal
 from ..errors import EXIT_OK, EXIT_REJECTED, CampusAuthError, ConfigError
 from ..probe import probe, to_json
-from ._common import _dump, _err, _say
+from ..transport import UrllibTransport
+from ._common import _dump, _err, _note, _say
 
 
 def _fail(args: argparse.Namespace, exc: CampusAuthError, hint: str) -> int:
@@ -22,8 +24,24 @@ def _fail(args: argparse.Namespace, exc: CampusAuthError, hint: str) -> int:
     return exc.exit_code
 
 
+def _target(args: argparse.Namespace) -> str:
+    """地址优先级：显式 `--url` > 劫持页里发现的 > 适配层默认值。"""
+    if args.url:
+        return args.url
+    if getattr(args, "no_discover", False):
+        return _adapter_base_url(args)
+    discovered = discover_portal(
+        UrllibTransport(verify_tls=args.verify_tls), timeout=args.timeout or TIMEOUT
+    )
+    _note(args, f"（地址是从劫持页发现的：{discovered}）")
+    return discovered
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
-    target = args.url or _adapter_base_url(args)
+    try:
+        target = _target(args)
+    except ConfigError as exc:
+        return _fail(args, exc, "提示：用 `--url http://<门户IP>` 显式指定门户地址。")
     try:
         analysis, used = probe(
             target,

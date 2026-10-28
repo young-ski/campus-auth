@@ -132,3 +132,11 @@ def test_tools_survive_a_non_utf8_locale(tmp_path: Path, script: str) -> None:
         argv.append(str(tmp_path / "x.pyz"))
     result = subprocess.run(argv, cwd=ROOT, capture_output=True, encoding="utf-8", env=env)
     assert result.returncode == 0, result.stderr[-800:]
+
+
+def test_ci_installs_and_uninstalls_for_real() -> None:
+    """install 的三平台命令从没在真机上跑过，只跑过 dry-run 的字符串检查。"""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "campus-auth install" in ci
+    assert "campus-auth uninstall" in ci
+    assert "reg query" in ci or "launchctl" in ci  # 装完得真去核一遍

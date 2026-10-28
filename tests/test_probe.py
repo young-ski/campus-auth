@@ -175,7 +175,7 @@ def test_probe_uses_adapter_url(campus: Path, monkeypatch: pytest.MonkeyPatch) -
         return analyze(DRCOM_SAMPLES), url
 
     monkeypatch.setattr(scan, "probe", grab)
-    cli.main(["probe"])
+    cli.main(["probe", "--no-discover"])
     assert seen["url"] == "https://netauth.huuc.edu.cn:802"
 
 

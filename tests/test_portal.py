@@ -299,6 +299,9 @@ def test_urllib_transport_returns_status_and_body(monkeypatch: pytest.MonkeyPatc
         def read(self, _limit: int = 0) -> bytes:
             return b'{"ok":1}'
 
+        def geturl(self) -> str:
+            return "http://1.2.3.4/"
+
         def __enter__(self):
             return self
 

@@ -26,6 +26,7 @@ class FakeTransport:
         headers: Mapping[str, str] | None = None,
         timeout: float = 0,
         limit: int = 0,
+        allow_redirects: bool = True,
     ) -> Response:
         self.calls.append({"url": url, "data": data, "headers": dict(headers or {})})
         reply = self.replies.pop(0) if self.replies else (200, "{}")

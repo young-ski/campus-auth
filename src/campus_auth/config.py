@@ -45,6 +45,7 @@ class Config:
     adapter: str = "huuc"
     account: str = ""
     password: str = field(default="", repr=False)
+    password_source: str = ""  # 只记来源，不记值
     operator: str = "none"
     mac: str = ""
     ip: str = ""
@@ -180,6 +181,9 @@ def load(
         for key, value in load_file(path).items():
             setattr(config, key, value)
 
+    if config.password:
+        config.password_source = "配置文件"
+
     overrides = overrides or {}
     for key, value in overrides.items():
         if value is None:
@@ -191,10 +195,13 @@ def load(
     # 优先级：命令行 > 环境变量 > 配置文件 > 钥匙串。
     # 钥匙串必须最后查 —— 它的键里带账号，而账号可能刚被命令行改过。
     if "password" in overrides:
-        pass
+        config.password_source = "命令行"
     elif os.environ.get(ENV_PASSWORD):
         config.password = os.environ[ENV_PASSWORD]
+        config.password_source = f"${ENV_PASSWORD}"
     elif not config.password:
         config.password = credentials.get(config.adapter, config.account)
+        if config.password:
+            config.password_source = "系统钥匙串"
 
     return config

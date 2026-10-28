@@ -726,3 +726,131 @@ def test_no_verify_tls_overrides_true_config(campus: Path, monkeypatch: pytest.M
     assert _config(args).verify_tls is False
     args.verify_tls = None
     assert _config(args).verify_tls is True
+
+
+# ---------- 没有 --url 时的自举 ----------
+
+
+def test_probe_discovers_the_portal_when_url_is_missing(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth.commands import scan
+
+    seen: dict[str, str] = {}
+
+    def fake_probe(url: str, **_kw):
+        seen["url"] = url
+        return analyze_url(url), url
+
+    def analyze_url(url: str):
+        from campus_auth.probe import analyze
+
+        return analyze({"body": "城市热点 Dr.COM dr1003 enc_pwd getkey"})
+
+    monkeypatch.setattr(scan, "discover_portal", lambda *_a, **_k: "http://10.9.8.7:802")
+    monkeypatch.setattr(scan, "probe", fake_probe)
+    assert run(["probe"]) == 0
+    assert seen["url"] == "http://10.9.8.7:802"
+    assert "10.9.8.7" in capsys.readouterr().out
+
+
+def test_probe_no_discover_falls_back_to_the_adapter(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from campus_auth.commands import scan
+
+    seen: dict[str, str] = {}
+
+    def fake_probe(url: str, **_kw):
+        from campus_auth.probe import analyze
+
+        seen["url"] = url
+        return analyze({"body": "城市热点 Dr.COM dr1003 enc_pwd getkey"}), url
+
+    def boom(*_a, **_k):
+        raise AssertionError("不该走发现")
+
+    monkeypatch.setattr(scan, "discover_portal", boom)
+    monkeypatch.setattr(scan, "probe", fake_probe)
+    assert run(["probe", "--no-discover"]) == 0
+    assert seen["url"].startswith("https://")
+
+
+def test_probe_reports_discovery_failure(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth.commands import scan
+    from campus_auth.errors import ConfigError
+
+    def boom(*_a, **_k):
+        raise ConfigError("没从劫持页找到门户地址")
+
+    monkeypatch.setattr(scan, "discover_portal", boom)
+    assert run(["probe"]) == 2
+    captured = capsys.readouterr()
+    assert "--url" in captured.err + captured.out
+
+
+def test_init_can_write_the_portal_url(campus: Path, capsys) -> None:
+    """外校用户知道门户地址却不知道适配层怎么写，init 得能直接收下。"""
+    assert run(["init", "--url", "http://10.9.8.7:802", "-o", "x.toml"]) == 0
+    text = (campus / "x.toml").read_text(encoding="utf-8")
+    assert 'base_url = "http://10.9.8.7:802"' in text
+    assert "# base_url" not in text
+
+
+def test_init_says_which_adapter_and_portal_it_chose(campus: Path, capsys) -> None:
+    assert run(["init", "-o", "y.toml"]) == 0
+    out = capsys.readouterr().out
+    assert "huuc" in out
+    assert "netauth.huuc.edu.cn" in out
+
+
+# ---------- doctor ----------
+
+
+def test_doctor_prints_diagnostics_without_the_password(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr("campus_auth.net.reachable", lambda *a, **k: True)
+    monkeypatch.setattr(
+        "campus_auth.commands.admin.probe_line", lambda *_a, **_k: "判定: 是 Dr.COM（eportal）"
+    )
+    assert run(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "huuc" in out
+    assert "python" in out.lower()
+    assert "pw" not in out  # 只报来源，不报值
+
+
+def test_doctor_reports_offline_without_failing(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr("campus_auth.net.reachable", lambda *a, **k: False)
+    monkeypatch.setattr("campus_auth.commands.admin.probe_line", lambda *_a, **_k: "没探通")
+    assert run(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "连不上" in out
+
+
+def test_doctor_works_without_any_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CAMPUS_AUTH_CONFIG", raising=False)
+    monkeypatch.setattr("campus_auth.net.reachable", lambda *a, **k: False)
+    monkeypatch.setattr("campus_auth.commands.admin.probe_line", lambda *_a, **_k: "没探通")
+    assert run(["doctor"]) == 0
+
+
+def test_doctor_says_where_the_password_came_from(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr("campus_auth.net.reachable", lambda *a, **k: False)
+    monkeypatch.setattr("campus_auth.commands.admin.probe_line", lambda *_a, **_k: "没探通")
+    run(["doctor"])
+    assert "配置文件" in capsys.readouterr().out
+
+
+def test_doctor_is_not_a_json_command(campus: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        run(["doctor", "--json"])
+    assert caught.value.code == 2

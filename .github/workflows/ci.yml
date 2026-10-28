@@ -80,3 +80,48 @@ jobs:
         run: |
           campus-auth install --config /tmp/x.toml --dry-run | tee /tmp/dry.txt
           grep -q 'campus_auth' /tmp/dry.txt
+
+  install:
+    # 三平台的 install 命令以前只跑过 dry-run 的字符串检查，真机从没执行过
+    name: 自启能装能卸 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - name: 造一份配置
+        shell: bash
+        run: |
+          printf 'adapter = "huuc"\naccount = "0814"\npassword = "pw"\n' > "$RUNNER_TEMP/c.toml"
+      - name: install --dry-run 先给产物
+        shell: bash
+        run: campus-auth install --config "$RUNNER_TEMP/c.toml" --dry-run | grep -q campus_auth
+      - name: 真装
+        shell: bash
+        run: campus-auth install --config "$RUNNER_TEMP/c.toml"
+      - name: 装上了吗
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v campus-auth-watch
+            test -f "$APPDATA/campus-auth/campus-auth-watch.cmd"
+          else
+            launchctl list | grep campus-auth
+            test -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
+          fi
+      - name: 卸载后要干净
+        shell: bash
+        run: |
+          campus-auth uninstall --config "$RUNNER_TEMP/c.toml"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ! reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v campus-auth-watch
+            test ! -f "$APPDATA/campus-auth/campus-auth-watch.cmd"
+          else
+            test ! -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
+          fi

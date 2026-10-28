@@ -17,6 +17,7 @@ from .commands import (
     _err,
     cmd_adapters,
     cmd_check,
+    cmd_doctor,
     cmd_init,
     cmd_install,
     cmd_login,
@@ -158,6 +159,13 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("-q", "--quiet", action="store_true", help="不输出，只看退出码")
     check.set_defaults(func=cmd_check)
 
+    sub.add_parser(
+        "doctor",
+        parents=[plain, identity, tuning],
+        help="体检：把排障要的信息一次打全",
+        description="打印版本、配置路径、适配层、连通性与探测结论；密码只报来源。",
+    ).set_defaults(func=cmd_doctor)
+
     probe_p = sub.add_parser(
         "probe",
         parents=[minimal, identity, tuning],
@@ -165,6 +173,11 @@ def _parser() -> argparse.ArgumentParser:
         description="只请求匿名接口，不要账号密码。必须从校园网内跑。",
     )
     probe_p.add_argument("--no-follow", action="store_true", help="不跟随劫持页给的跳转地址")
+    probe_p.add_argument(
+        "--no-discover",
+        action="store_true",
+        help="不给 --url 时别从劫持页找地址，直接用适配层默认值",
+    )
     probe_p.set_defaults(func=cmd_probe)
 
     urls = sub.add_parser(

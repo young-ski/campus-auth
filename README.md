@@ -46,13 +46,25 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
 
 ## 三步上手
 
-必须在校园网内（手机热点不行）。
+必须在校园网内、且**尚未登录**（手机热点不行）。`probe` 会从劫持页自己找门户地址；
+已经在线的网络捞不到东西，那就 `--url http://<门户IP>` 显式给。
 
 ```bash
 campus-auth probe                          # 1. 先确认是 Dr.COM，不是别的门户
-campus-auth init                           # 2. 生成配置模板
-campus-auth password                       # 3. 存密码（不回显，进系统钥匙串）
+campus-auth init --url http://<门户IP>      # 2. 生成配置模板（地址会被写进去）
+campus-auth password                       # 3. 填完 account 再存密码（不回显）
 ```
+
+`init` 会打印它用的适配层和门户地址，写成 huuc 只是默认值 —— **不是河南城建学院就换**：
+
+```bash
+campus-auth probe --url http://10.9.8.7:802          # 判成 Dr.COM 再往下
+campus-auth init --adapter generic --url http://10.9.8.7:802
+campus-auth login --adapter generic --url http://10.9.8.7:802 --ip 10.x.x.x
+```
+
+`generic` 里的参数名和密钥函数要照你自己抓到的请求改（见 [加一所学校](#加一所学校)）；
+改好之前 `probe` 说「证据不全」是正常的。已知学校的清单在 [`docs/schools.md`](docs/schools.md)。
 
 `init` 之后按提示改 `account`，然后：
 
@@ -63,10 +75,12 @@ campus-auth watch      # 断线自动重连，前台跑
 ```
 
 `status` 会把“门户里有会话”和“会话是你自己的”分开说 —— 前者可能只是上一位用户还没掉线。
+出问题先跑 `campus-auth doctor`：它把排障要的信息一次打全，密码不会出现，可以直接贴进 issue。
 
 ## 第一步的 probe
 
-`probe` 只请求匿名接口，**不要账号密码**；只从校园网内有效。默认会跟着劫持页跳一次，不想跟加 `--no-follow`。
+`probe` 只请求匿名接口，**不要账号密码**；只从校园网内有效。不给 `--url` 时它会打两个公开探针地址，
+从劫持页里找门户（`--no-discover` 可关掉，退回适配层默认值）；拿到地址后默认会跟着劫持页跳一次，不想跟加 `--no-follow`。
 
 ```
 $ campus-auth probe --url http://10.210.213.208:802
@@ -173,6 +187,7 @@ campus-auth uninstall           # 停掉并删干净
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
 | `status` | 列出门户会话，标出哪条是你自己的；`online` 指你自己、`any_online` 指门户里有任何会话 |
 | `check` | 只判定在线与否，结果走退出码 |
+| `doctor` | 体检：版本 / 配置路径 / 适配层 / 连通性 / 探测结论，密码只报来源 |
 | `watch` | 保活循环，启动打摘要、每轮带耗时；`--once` 跑一轮，`--log` 同时落盘（自动轮转） |
 | `install` / `uninstall` | 把 `watch` 装成登录自启 / 卸掉（`--dry-run` 只打印） |
 | `password` | 密码存进/删出系统钥匙串（`--show` 看状态，`--forget` 删） |
@@ -215,7 +230,7 @@ campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
 
 ## 免责
 
-非官方项目，与学校、Dr.COM 均无关系。协议来自公开前端代码和本机抓包，不含校内凭据。
+非官方项目，与学校、Dr.COM 均无关系。漏洞与凭据相关的报告走 [SECURITY.md](SECURITY.md) 的私下通道。协议来自公开前端代码和本机抓包，不含校内凭据。
 密码流经：内存、系统钥匙串（若启用）、配置文件（若你写了）、`.url` 文件与报错里的密文。
 
 ## 许可证

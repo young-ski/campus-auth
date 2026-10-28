@@ -39,11 +39,19 @@ def _lower_headers(headers: Mapping[str, str]) -> dict[str, str]:
     return {key.lower(): value for key, value in headers.items()}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随：把 302 原样交回去，好让调用方看 Location。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
 @dataclass
 class Response:
     status: int
     text: str
     headers: Mapping[str, str] = field(default_factory=dict)
+    url: str = ""
 
 
 class Transport(Protocol):
@@ -55,6 +63,7 @@ class Transport(Protocol):
         headers: Mapping[str, str] | None = None,
         timeout: float = 20.0,
         limit: int = MAX_BODY,
+        allow_redirects: bool = True,
     ) -> Response:
         """发一次请求。4xx/5xx 不抛，网络错误抛 `TransportError`。"""
         ...
@@ -64,10 +73,13 @@ class UrllibTransport:
     """标准库实现：带 cookie jar，按 `verify` 决定要不要校验证书。"""
 
     def __init__(self, *, verify_tls: bool = False) -> None:
+        handler = urllib.request.HTTPSHandler(context=ssl_context(verify_tls))
         self._opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
-            urllib.request.HTTPSHandler(context=ssl_context(verify_tls)),
+            handler,
         )
+        # 只给"要看跳转目标"的调用方用（探针自举）
+        self._bare_opener = urllib.request.build_opener(handler, _NoRedirect())
 
     def send(
         self,
@@ -77,20 +89,26 @@ class UrllibTransport:
         headers: Mapping[str, str] | None = None,
         timeout: float = 20.0,
         limit: int = MAX_BODY,
+        allow_redirects: bool = True,
     ) -> Response:
+        opener = self._opener if allow_redirects else self._bare_opener
         request = urllib.request.Request(
             url, data=data, headers={"User-Agent": USER_AGENT, **dict(headers or {})}
         )
         try:
-            with self._opener.open(request, timeout=timeout) as response:
+            with opener.open(request, timeout=timeout) as response:
                 return Response(
                     response.status,
                     response.read(limit).decode("utf-8", "replace"),
                     _lower_headers(response.headers),
+                    response.geturl(),
                 )
         except urllib.error.HTTPError as exc:
             return Response(
-                exc.code, exc.read(limit).decode("utf-8", "replace"), _lower_headers(exc.headers)
+                exc.code,
+                exc.read(limit).decode("utf-8", "replace"),
+                _lower_headers(exc.headers),
+                exc.url or url,
             )
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise TransportError(str(exc)) from exc

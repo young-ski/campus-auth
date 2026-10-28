@@ -30,6 +30,24 @@ body:
       placeholder: "3.12.4"
     validations:
       required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      description: 分诊的第一个问题 —— pyz 与 pip 装的路径完全不同
+      options:
+        - pip install campus-auth
+        - pip install "campus-auth[keyring]"
+        - 从 Releases 下的 campus-auth.pyz
+        - git 装的主干
+    validations:
+      required: true
+  - type: textarea
+    id: probe
+    attributes:
+      label: "`campus-auth probe --json` 输出"
+      description: 打码后贴整段。里面的密文密钥是同一行的 IP，露出来问题不大。
+      render: json
   - type: input
     id: adapter
     attributes:

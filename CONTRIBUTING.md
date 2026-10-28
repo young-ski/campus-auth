@@ -46,10 +46,16 @@ git push
 gh release create vx.y.z dist/campus-auth.pyz --title vx.y.z --notes "…"
 ```
 
+## 安全
+
+凭据相关（密码泄漏、日志残留、TLS）走私下通道，见 [`SECURITY.md`](SECURITY.md)，不要开公开 issue。
+
 ## 报 bug
 
 请附上：适配层名、Python 版本、`campus-auth --version`、退出码、`campus-auth probe --json`
-的输出，以及打码后的服务端原文。只说“登录不上”没法定位。
+的输出，以及打码后的服务端原文。只说“登录不上”没法定位。先跑一次 `campus-auth doctor`，它的输出可以直接贴（密码只报来源）。
+
+安全问题不要贴进公开 issue，走 [`SECURITY.md`](SECURITY.md)。
 
 ## 本地开发
 

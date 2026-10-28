@@ -52,7 +52,7 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `target` | 字符串 | 实际探测的地址（可能是 `--url` 或适配层默认值） |
+| `target` | 字符串 | 实际探测的地址：`--url` > 从劫持页发现的 > 适配层默认值 |
 | `verdict` | 枚举 | `drcom` / `likely-drcom` / `ruijie` / `srun` / `unknown`。后两者本项目不支持 |
 | `is_drcom` | 布尔 | `verdict` 是前两项时为 `true` |
 | `confidence` | 枚举 | `高` / `中` / `低`，由分数阈值决定 |

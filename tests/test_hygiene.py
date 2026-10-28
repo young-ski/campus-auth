@@ -61,3 +61,27 @@ def test_adapters_command_points_at_the_catalog() -> None:
 def test_portal_has_no_unreachable_tail_raise() -> None:
     text = (ROOT / "src" / "campus_auth" / "portal.py").read_text(encoding="utf-8")
     assert "请求失败（已重试 {self.retries} 次）: {self.last_url}" not in text
+
+
+def test_security_policy_exists_and_names_a_private_channel() -> None:
+    text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    assert "Security" in text or "advisories" in text
+    assert "密码" in text
+
+
+def test_pr_template_asks_for_the_checks() -> None:
+    text = (ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8")
+    assert "pytest" in text
+    assert "ruff" in text
+
+
+def test_bug_template_asks_for_the_install_method() -> None:
+    text = (ROOT / ".github" / "ISSUE_TEMPLATE" / "bug.yml").read_text(encoding="utf-8")
+    assert "安装方式" in text
+    assert "probe --json" in text
+
+
+def test_readme_lists_doctor_and_points_at_security() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "doctor" in text
+    assert "SECURITY.md" in text

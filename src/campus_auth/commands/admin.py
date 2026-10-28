@@ -1,16 +1,18 @@
-"""管理面：init / adapters / urls / install / uninstall。"""
+"""管理面：init / adapters / urls / install / uninstall / doctor。"""
 
 from __future__ import annotations
 
 import argparse
 import os
+import platform as platform_mod
 import sys
 from pathlib import Path
 
-from .. import adapters, credentials, net
+from .. import __version__, adapters, credentials, net
 from .. import install as installer
 from ..config import ENV_PASSWORD, find_config_file
 from ..errors import EXIT_CONFIG, EXIT_OK, CampusAuthError
+from ..probe import probe
 from ..runner import _host_port, build
 from ._common import CONFIG_TEMPLATE, _config, _err, _say
 
@@ -21,16 +23,21 @@ def cmd_init(args: argparse.Namespace) -> int:
         _err(f"{target} 已存在，加 --force 覆盖")
         return EXIT_CONFIG
     adapter = adapters.get_adapter(args.adapter or "huuc")
+    base_url = args.url or adapter.base_url
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         CONFIG_TEMPLATE.format(
             env=ENV_PASSWORD,
             adapter=adapter.name,
+            base_url=base_url,
             operators=" / ".join(adapter.operator_suffixes) or "（本适配层无）",
         ),
         encoding="utf-8",
     )
     _say(f"已写入 {target}")
+    _say(f"用的是 {adapter.name}（{adapter.school}），门户 {base_url}")
+    if adapter.status != "已验证":
+        _say(f"! 这个适配层的状态是「{adapter.status}」：先跑 `campus-auth probe` 或用 --url 核实")
     _say("下一步：填 account，然后存密码 —— `campus-auth password`（交互式，不回显）")
     if not credentials.available():
         _say(f"! 没装 keyring：改用 export ${ENV_PASSWORD}=...，或装 campus-auth[keyring]")
@@ -140,4 +147,48 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
     installer.uninstall(service)
     _say(f"已卸载（{service.path}）。")
+    return EXIT_OK
+
+
+def probe_line(target: str, *, verify: bool = False, timeout: float = 5.0) -> str:
+    """一行探测结论。失败也只返回文案，doctor 不许被探针拖崩。"""
+    try:
+        analysis, _used = probe(target, timeout=min(5.0, timeout), verify=verify, follow=True)
+    except CampusAuthError as exc:
+        return f"没探通: {str(exc).splitlines()[0]}"
+    return f"判定: {analysis.verdict}（{analysis.score} 分）"
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """把排障要的信息一次打全，密码只报来源不报值。"""
+    config = _config(args)
+    _say(f"campus-auth {__version__}")
+    _say(f"python {platform_mod.python_version()}  {sys.platform}")
+    path = find_config_file(getattr(args, "config", None))
+    _say(f"配置文件 {path or '(没找到，用的是内置默认值)'}")
+    _say(f"适配层 {config.adapter}  账号 {config.account or '(未填)'}  运营商 {config.operator}")
+    _say(f"密码来源 {config.password_source or '(未配置)'}")
+    _say(f"钥匙串 {'可用' if credentials.available() else '不可用'}")
+
+    try:
+        config.validate(need_password=False)
+        base_url = config.base_url or adapters.get_adapter(config.adapter).base_url
+        host, port = _host_port(base_url)
+    except (CampusAuthError, ValueError) as exc:
+        _say(f"! 配置还跑不起来: {exc}")
+        return EXIT_OK
+
+    online_ish = net.reachable(host, port, timeout=3)
+    _say(f"门户 {base_url}  {'连得上' if online_ish else '连不上'}")
+    try:
+        ip = config.ip or net.local_ip(host, port)
+        _say(f"本机 IP {ip}  MAC {config.mac or net.local_mac(ip) or '(取不到)'}")
+        _say(f"SSID {net.current_ssid() or '(有线或读不到)'}")
+    except CampusAuthError as exc:
+        _say(f"! {exc}")
+    _say(probe_line(base_url, verify=config.verify_tls, timeout=config.timeout))
+    if not online_ish:
+        _say("连不上门户时，先确认在校园网内、地址没写错。")
+    _say("")
+    _say("把这几行贴进 issue 就够定位了，密码本身不会出现。")
     return EXIT_OK

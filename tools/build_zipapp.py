@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import shutil
 import sys
@@ -21,7 +22,15 @@ SRC = ROOT / "src"
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info")
 
 
+def _force_utf8() -> None:
+    """别指望调用方的 locale：Windows runner 是 cp1252，中文 print 会炸。"""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str]) -> int:
+    _force_utf8()
     target = Path(argv[0]) if argv else ROOT / "dist" / "campus-auth.pyz"
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:

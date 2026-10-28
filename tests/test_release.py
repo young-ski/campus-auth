@@ -121,3 +121,14 @@ def test_check_version_script_tolerates_empty_tag() -> None:
         encoding="utf-8",
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("script", ["tools/build_zipapp.py", "tools/check_version.py"])
+def test_tools_survive_a_non_utf8_locale(tmp_path: Path, script: str) -> None:
+    """GitHub 的 Windows runner 是 cp1252；脚本直接 print 中文会 UnicodeEncodeError。"""
+    env = {**__import__("os").environ, "PYTHONIOENCODING": "cp1252"}
+    argv = [sys.executable, script]
+    if script.endswith("build_zipapp.py"):
+        argv.append(str(tmp_path / "x.pyz"))
+    result = subprocess.run(argv, cwd=ROOT, capture_output=True, encoding="utf-8", env=env)
+    assert result.returncode == 0, result.stderr[-800:]

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import sys
 import tomllib
@@ -19,7 +20,15 @@ ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "src" / "campus_auth" / "__init__.py"
 
 
+def _force_utf8() -> None:
+    """别指望调用方的 locale：Windows runner 是 cp1252，中文 print 会炸。"""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str]) -> int:
+    _force_utf8()
     with (ROOT / "pyproject.toml").open("rb") as handle:
         declared = str(tomllib.load(handle)["project"]["version"])
     match = re.search(r'__version__ = "([^"]+)"', INIT.read_text(encoding="utf-8"))

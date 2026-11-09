@@ -43,9 +43,15 @@ def cmd_init(args: argparse.Namespace) -> int:
         _say("↑ 这是给河南城建学院的。确认自己是本校；不是的话加 --adapter generic 重来。")
     if adapter.status != "已验证":
         _say(f"! 这个适配层的状态是「{adapter.status}」：先跑 `campus-auth probe` 或用 --url 核实")
-    _say("下一步：填 account，然后存密码 —— `campus-auth password`（交互式，不回显）")
-    if not credentials.available():
-        _say(f"! 没装 keyring：改用 export ${ENV_PASSWORD}=...，或装 campus-auth[keyring]")
+    _say("下一步：打开它填上 account")
+    if credentials.available():
+        _say("再存密码：`campus-auth password`（交互式，不回显，进系统钥匙串）")
+    else:
+        _say(
+            "再放密码，两条路选一条：装可选依赖后 `campus-auth password`"
+            f'（pip install "campus-auth[keyring]"），或直接在这份配置里写 password。'
+        )
+        _say(f"! 临时用也可以设 ${ENV_PASSWORD}，但它只在当前 shell 有效。")
     _say("填完跑 `campus-auth status` 自检：没配好它会直接指出来")
     return EXIT_OK
 

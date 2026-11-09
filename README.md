@@ -4,17 +4,10 @@
 [![Python](https://img.shields.io/pypi/pyversions/campus-auth)](https://pypi.org/project/campus-auth/)
 [![CI](https://github.com/young-ski/campus-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/young-ski/campus-auth/actions/workflows/ci.yml)
 
-**Dr.COM / eportal 校园网门户认证客户端。** 一行命令登录，断线自动重连。密钥算法、参数名、
-运营商后缀全部收在工具里，你不用再点一个 IP 一变就失效的快捷方式。
+**河南城建学院校园网（Dr.COM / eportal）的命令行客户端。** 一行命令登录，断线自动重连：
+不用再点那个 IP 一变就失效的快捷方式，也不用每次手动开浏览器。
 
-> A CLI client for Dr.COM/eportal campus captive portals (Chinese campus networks).
-
-> **English** — Logs in to a Dr.COM/eportal campus portal with one command and reconnects when the
-> session drops. Windows / macOS / Linux, Python ≥ 3.11, no runtime dependencies.
-> **Dr.COM only**: run `campus-auth probe` to see whether your campus is one; other portals are
-> named and you stop there. Covered schools: [`docs/schools.md`](docs/schools.md). Porting another
-> school is one file — `campus-auth new-adapter <code>` ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
-> `--json` on every read command, exit codes are a contract, passwords go to the OS keyring.
+> **非官方、自担风险。** 学校没对这类工具出过明确规定，详见[免责与风险](#免责与风险自担风险)。
 
 ```
 $ campus-auth login -w cmcc
@@ -27,11 +20,18 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
 
 | 门户 | 适配层 | 状态 |
 | --- | --- | --- |
-| Dr.COM / eportal（`wlan_user_ip` + 异或） | `huuc` | **实机验证**（河南城建学院） |
-| 其它 Dr.COM 门户 | `generic` | 模板，照它改 |
+| 河南城建学院 Dr.COM / eportal | `huuc` | **实机验证** |
+| 其它 Dr.COM 门户 | `generic` | 模板，照它改（本项目主要不为它们服务） |
 
 **范围只有 Dr.COM / eportal。** 锐捷（`InterFace.do`）和深澜（`srun_portal`）不随包提供：
-维护者拿不到真机，不想一直挂着“未实机”。`probe` 仍然能认出它们，认出来会直接告诉你换工具。
+维护者拿不到真机。`probe` 仍然能认出它们，认出来会直接告诉你换工具。
+
+> **English** — A CLI for the Dr.COM/eportal campus portal of HUUC (Henan University of Urban
+> Construction), Chinese campus network. One command to log in, auto-reconnect on drops, `--json`
+> everywhere, exit codes are a contract, passwords go to the OS keyring. Windows / macOS / Linux,
+> Python ≥ 3.11, no runtime dependencies. Other Dr.COM campuses can work through the `generic`
+> adapter ([`CONTRIBUTING.md`](https://github.com/young-ski/campus-auth/blob/main/CONTRIBUTING.md)); covered schools live in
+> [`docs/schools.md`](https://github.com/young-ski/campus-auth/blob/main/docs/schools.md).
 
 ---
 
@@ -49,29 +49,29 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
   不会把网关点成 QPS 炸弹。
 - **宿舍 / 教学楼的运营商差异**：SSID 和网段决定要不要 `@cmcc` 后缀，选错就是
   `AC认证失败` —— 客户端会先提示，再把服务端的黑话翻译成人话。
-- **给脚本用**：`--json` 加下面那张退出码表，塞进计划任务和监控都不用解析中文；字段有 schema 版本和稳定性承诺，见 [`docs/json.md`](docs/json.md)。
+- **给脚本用**：`--json` 加下面那张退出码表，塞进计划任务和监控都不用解析中文；字段有 schema 版本和稳定性承诺，见 [`docs/json.md`](https://github.com/young-ski/campus-auth/blob/main/docs/json.md)。
 
 ## 三步上手
 
-必须在校园网内、且**尚未登录**（手机热点不行）。`probe` 会从劫持页自己找门户地址；
-已经在线的网络捞不到东西，那就 `--url http://<门户IP>` 显式给。
+必须在校园网内。`probe` 会从劫持页自己找门户地址；**已经在线时也能跑**——捞不到就自动退回
+本校门户地址，不用你填 IP。只收 HTTPS 的门户会从 `http://` 自动重试一次 `https://`。
 
 ```bash
 campus-auth probe                          # 1. 先确认是 Dr.COM，不是别的门户
-campus-auth init --url http://<门户IP>      # 2. 生成配置模板（地址会被写进去）
+campus-auth init                           # 2. 生成配置模板
 campus-auth password                       # 3. 填完 account 再存密码（不回显）
 ```
 
 `init` 会打印它用的适配层和门户地址，写成 huuc 只是默认值 —— **不是河南城建学院就换**：
 
 ```bash
-campus-auth probe --url http://10.9.8.7:802          # 判成 Dr.COM 再往下
-campus-auth init --adapter generic --url http://10.9.8.7:802
-campus-auth login --adapter generic --url http://10.9.8.7:802 --ip 10.x.x.x
+campus-auth probe --url https://10.9.8.7:802         # 判成 Dr.COM 再往下
+campus-auth init --adapter generic --url https://10.9.8.7:802
+campus-auth login --adapter generic --url https://10.9.8.7:802 --ip 10.x.x.x
 ```
 
 `generic` 里的参数名和密钥函数要照你自己抓到的请求改（见 [加一所学校](#加一所学校)）；
-改好之前 `probe` 说「证据不全」是正常的。已知学校的清单在 [`docs/schools.md`](docs/schools.md)。
+改好之前 `probe` 说「证据不全」是正常的。已知学校的清单在 [`docs/schools.md`](https://github.com/young-ski/campus-auth/blob/main/docs/schools.md)。
 
 `init` 之后按提示改 `account`，然后：
 
@@ -87,31 +87,34 @@ campus-auth watch      # 断线自动重连，前台跑
 ## 第一步的 probe
 
 `probe` 只请求匿名接口，**不要账号密码**；只从校园网内有效。不给 `--url` 时它会打两个公开探针地址，
-从劫持页里找门户（`--no-discover` 可关掉，退回适配层默认值）；拿到地址后默认会跟着劫持页跳一次，不想跟加 `--no-follow`。
+从劫持页里找门户；捞不到（已在线）就退回适配层地址。`--no-discover` 关掉发现这一步，`--no-follow`
+不跟劫持页的跳转。
 
 ```
-$ campus-auth probe --url http://10.210.213.208:802
-判定: 是 Dr.COM（eportal）   置信度: 高（155 分）
+$ campus-auth probe
+（没从劫持页找到地址：…；改用适配层地址 https://netauth.huuc.edu.cn:802）
+目标 https://netauth.huuc.edu.cn:802
+判定: 是 Dr.COM（eportal）   置信度: 中（60 分）
 
-  ✓ 页面 / JS 里出现 dr1003 一类回调 (+35)
-  ✓ JS 里有 enc_pwd（异或加密函数） (+30)
-  ✓ JS 里有 getkey（密钥派生） (+25)
-  ✓ 出现 wlan_user_ip 参数 (+20)
+  ✓ 会话接口返回 online_session / online_time (+30)
+  ✓ 响应含 ret_code / result 字段 (+15)
   ...
+! 门户显示已有在线会话：已在线时 probe 同样有效，登录前不必先注销
 ```
 
 判定不是看一条信号：`dr1003` 只有**页面里出现过**才算数（Dr.COM 会回显你传的任何 callback），
 `wlan_user_ip`、`result` 这种谁都有的只值低分。要判成「是 Dr.COM」，除了分数过 55 分、
-领先第二名 10 分，还必须命中 `enc_pwd` / `getkey` 这类独有特征；凑不够就只说「像」，并列出还缺哪些证据。
+领先第二名 10 分，还必须命中 `enc_pwd` / `getkey` / 会话接口的 `online_session` 这类独有特征；
+凑不够就只说「像」，并列出还缺哪些证据。
 
 | probe 说 | 怎么办 |
 | --- | --- |
-| 是 Dr.COM | 用 `huuc` 或 `generic` 起配置，只改 `base_url` 与密钥/参数 |
+| 是 Dr.COM | 本校：直接 `campus-auth init`，填账号，`login`。外校：用 `generic` 起配置，改 `base_url` 与密钥/参数 |
 | 像是 Dr.COM，证据不全 | 别急着配：F12 抓一次真登录请求核实参数名 |
 | 是锐捷 / 深澜 | 本项目不覆盖，换对应工具 |
 | 没认出来 | 可能不是网页认证：路由器自带页、802.1X 都长这样 |
 
-退出码：0 命中、1 未命中、2 地址格式错、3 探不到（多半不在校园网）。
+退出码：0 命中、1 未命中、2 地址格式错、3 环境问题、4 探不到（多半不在校园网）。
 
 ## 安装
 
@@ -181,8 +184,8 @@ campus-auth uninstall           # 停掉并删干净
 其余命令不接受这个参数。
 
 每个对象都带 `"schema": 1`，同一版本内只增字段、不删不改。
-字段表、示例和稳定性约定在 [`docs/json.md`](docs/json.md)，机器可读版在
-[`docs/json.schema.json`](docs/json.schema.json)（CI 会拿真实输出对一遍）。
+字段表、示例和稳定性约定在 [`docs/json.md`](https://github.com/young-ski/campus-auth/blob/main/docs/json.md)，机器可读版在
+[`docs/json.schema.json`](https://github.com/young-ski/campus-auth/blob/main/docs/json.schema.json)（CI 会拿真实输出对一遍）。
 
 ## 命令与退出码
 
@@ -212,11 +215,11 @@ campus-auth uninstall           # 停掉并删干净
 
 先跑 `campus-auth new-adapter <代号>`：生成的骨架带必改清单，改完在
 `adapters/__init__.py` 登记。手抄的模板是 `generic`。步骤和验收清单见
-[`CONTRIBUTING.md`](CONTRIBUTING.md)，那里也写了哪些东西不能提交（真实学号、密码、MAC）。
+[`CONTRIBUTING.md`](https://github.com/young-ski/campus-auth/blob/main/CONTRIBUTING.md)，那里也写了哪些东西不能提交（真实学号、密码、MAC）。
 
 **不想改主仓，或还没准备 PR**：`--adapter` 也能直接从自己的文件加载（`路径.py:属性名`，
 文件里只要有一个 `Adapter` 实例）。它依赖内部接口，请锁版本；跑通了把一行补进
-[`docs/schools.md`](docs/schools.md)，别人少走一遍。
+[`docs/schools.md`](https://github.com/young-ski/campus-auth/blob/main/docs/schools.md)，别人少走一遍。
 
 ```bash
 campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
@@ -233,15 +236,27 @@ campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
 - `.url` / `.desktop` 快捷方式里的密码是 IP 异或的密文，而 IP 就在同一个 URL 里 ——
   **等于明文**，分享前留意。报错里的 URL 默认把密码打成 `ab…yz`，要原文加
   `--show-secrets`。
-- `state.json` 只存学号、IP、会话索引，不含密码；POSIX 下权限 0600，Windows 靠目录 ACL。
+- `state.json` 只存学号、IP、会话索引，不含密码。**本版其实没有 `state.json`**（锐捷/深澜下线时一起
+  删了），也没有 `schtasks` 计划任务；Windows 自启走注册表 `HKCU\...\Run`。
 - 门户升级会改参数名，适配层跟着改；`generic` 就是为此留的。
 
-变更历史见 [`CHANGELOG.md`](CHANGELOG.md)。
+变更历史见 [`CHANGELOG.md`](https://github.com/young-ski/campus-auth/blob/main/CHANGELOG.md)。
 
-## 免责
+## 免责与风险（自担风险）
 
-非官方项目，与学校、Dr.COM 均无关系。漏洞与凭据相关的报告走 [SECURITY.md](SECURITY.md) 的私下通道。协议来自公开前端代码和本机抓包，不含校内凭据。
-密码流经：内存、系统钥匙串（若启用）、配置文件（若你写了）、`.url` 文件与报错里的密文。
+**学校目前没有对第三方客户端出过明确规定**，用不用由你判断，出了问题也由你自己承担。具体是：
+
+- 非官方项目，与河南城建学院、Dr.COM 均无关系，没有任何人背书。
+- 只做网页认证的登录/注销/保活，**不改计费、不绕过运营商套餐限制**，也不替你去办开通。
+- 门户改版、学校加二次校验、运营商换策略，都可能让它突然失效；失效期间可能拖慢你的上网。
+- 密码会经过：内存、系统钥匙串（若启用）、配置文件（若你写了明文）、`.url` 快捷方式（密文但可
+  还原）、`watch.log` 与报错里的密文。**别把 `campus-auth.toml` 提交进公开仓库。**
+- 账号被锁、流量异常扣费这类事，先找学校网络中心，本项目帮不上。
+
+能接受再用。只想临时试一次就手动 `campus-auth login`，别装自启。
+
+漏洞与凭据相关的报告走 [SECURITY.md](https://github.com/young-ski/campus-auth/blob/main/SECURITY.md) 的私下通道；协议来自公开前端代码和本机抓包，
+不含校内凭据。
 
 ## 许可证
 

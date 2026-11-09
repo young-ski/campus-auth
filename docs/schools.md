@@ -33,7 +33,7 @@ campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
 
 三条边界先知道：
 
-1. 它依赖本仓的 `Adapter` 接口，属于内部 API，升级时可能被改动 —— 请锁版本（`pip install "campus-auth==1.4.*"`）。
+1. 它依赖本仓的 `Adapter` 接口，属于内部 API，升级时可能被改动 —— 请锁版本（`pip install "campus-auth==1.7.*"`）。
 2. 放外面不会被 CI 覆盖，也进不了 `adapters` 列表。
 3. 用的是你本机的 Python，模拟器/容器里要自己装好依赖。
 

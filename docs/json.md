@@ -35,7 +35,7 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
 {
   "schema": 1,
   "ok": true,
-  "target": "http://10.210.213.208:802",
+  "target": "https://10.210.213.208:802",
   "verdict": "drcom",
   "is_drcom": true,
   "confidence": "高",

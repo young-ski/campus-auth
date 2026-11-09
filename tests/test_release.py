@@ -107,6 +107,24 @@ def test_zipapp_runs(tmp_path: Path) -> None:
     assert "huuc" in result.stdout
 
 
+def test_zipapp_propagates_exit_codes(tmp_path: Path) -> None:
+    """zipapp 的 `main=` 生成的入口不 sys.exit，pyz 会永远退 0。"""
+    target = tmp_path / "campus-auth.pyz"
+    subprocess.run([sys.executable, "tools/build_zipapp.py", str(target)], cwd=ROOT, check=True)
+    result = subprocess.run(
+        [sys.executable, str(target), "probe", "--url", "nonsense"],
+        capture_output=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 2, result.stderr
+
+
+def test_zipapp_entry_calls_sys_exit() -> None:
+    source = (ROOT / "tools" / "build_zipapp.py").read_text(encoding="utf-8")
+    assert "sys.exit(main())" in source
+    assert 'main="campus_auth.cli:main"' not in source
+
+
 @pytest.mark.parametrize("word", ["sha256", "SHA256SUMS"])
 def test_build_script_writes_a_checksum(word: str) -> None:
     assert word.lower() in (ROOT / "tools" / "build_zipapp.py").read_text(encoding="utf-8").lower()

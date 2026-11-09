@@ -13,6 +13,7 @@ from .admin import cmd_adapters, cmd_doctor, cmd_init, cmd_install, cmd_uninstal
 from .auth import cmd_check, cmd_login, cmd_logout, cmd_status, cmd_unbind
 from .new_adapter import cmd_new_adapter
 from .scan import cmd_probe
+from .setup import cmd_setup
 from .watch import cmd_watch
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "cmd_new_adapter",
     "cmd_password",
     "cmd_probe",
+    "cmd_setup",
     "cmd_status",
     "cmd_unbind",
     "cmd_uninstall",

@@ -48,6 +48,11 @@ git push
 gh release create vx.y.z dist/campus-auth.pyz --title vx.y.z --notes "…"
 ```
 
+发版会把 `campus-auth.pyz`、`SHA256SUMS` 和 `campus-auth-<版本>-win.zip` 一起挂到 Release 上。
+压缩包由 `tools/make_bundle.py` 生成，里面有 `install.cmd`，**发之前自己解压双击跑一遍**
+（空账号那次应当报错退出，不是 Done）。`install.cmd` 必须是纯 ASCII + CRLF，
+`tests/test_packaging.py` 会拦。
+
 ## 安全
 
 凭据相关（密码泄漏、日志残留、TLS）走私下通道，见 [`SECURITY.md`](SECURITY.md)，不要开公开 issue。

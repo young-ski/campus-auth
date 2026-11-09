@@ -108,6 +108,19 @@ def test_readme_carries_the_self_risk_disclaimer() -> None:
     assert "不绕过" in text or "计费" in text
 
 
+def test_readme_points_at_the_windows_bundle() -> None:
+    """不会命令行的人只有一个入口：Releases 上的 zip + 双击 install.cmd。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "-win.zip" in text
+    assert "install.cmd" in text
+    assert "热点" in text  # 认证前装不了东西，这句不能省
+
+
+def test_readme_lists_setup_before_probe() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert text.index("campus-auth setup") < text.index("campus-auth probe")
+
+
 def test_init_tells_you_to_confirm_the_school(tmp_path: Path, capsys) -> None:
     from campus_auth import cli
 

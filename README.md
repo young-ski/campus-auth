@@ -51,16 +51,45 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
   `AC认证失败` —— 客户端会先提示，再把服务端的黑话翻译成人话。
 - **给脚本用**：`--json` 加下面那张退出码表，塞进计划任务和监控都不用解析中文；字段有 schema 版本和稳定性承诺，见 [`docs/json.md`](https://github.com/young-ski/campus-auth/blob/main/docs/json.md)。
 
-## 三步上手
+## 装
 
-必须在校园网内。`probe` 会从劫持页自己找门户地址；**已经在线时也能跑**——捞不到就自动退回
-本校门户地址，不用你填 IP。只收 HTTPS 的门户会从 `http://` 自动重试一次 `https://`。
+### 不会命令行的同学（推荐）
+
+从 [Releases](https://github.com/young-ski/campus-auth/releases) 下 `campus-auth-<版本>-win.zip`，
+解压后双击 `install.cmd`，跟着做就行：它会检查 Python、让你填学号、问一次密码、当场验一遍，
+最后问要不要开机自启。包里有 `install-guide.txt`（步骤）和 `disclaimer.txt`（风险）。
+
+**装之前先连热点或流量** —— 还没认证时下载和 pip 都上不去。
+
+### 会命令行
 
 ```bash
-campus-auth probe                          # 1. 先确认是 Dr.COM，不是别的门户
-campus-auth init                           # 2. 生成配置模板
-campus-auth password                       # 3. 填完 account 再存密码（不回显）
+pip install campus-auth
+pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
+
+默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
+没有 pip 的机器用单文件：从 Releases 下 `campus-auth.pyz`，`python campus-auth.pyz status`。
+同一个 Release 里带 `SHA256SUMS`，`sha256sum -c SHA256SUMS` 能先核对再跑。
+
+## 四步上手
+
+`setup` 一条命令做完：写配置 → 填学号 → 存密码 → 当场验一次 → 问要不要自启。
+
+```bash
+campus-auth setup
+```
+
+想自己一步步来，或者要改细节：
+
+```bash
+campus-auth probe                          # 先确认是 Dr.COM，不是别的门户
+campus-auth init                           # 生成配置模板
+campus-auth password                       # 填完 account 再存密码（不回显）
+```
+
+`probe` 会从劫持页自己找门户地址；**已经在线时也能跑**——捞不到就自动退回本校门户地址，
+不用你填 IP。只收 HTTPS 的门户会从 `http://` 自动重试一次 `https://`。
 
 `init` 会打印它用的适配层和门户地址，写成 huuc 只是默认值 —— **不是河南城建学院就换**：
 
@@ -173,6 +202,11 @@ campus-auth install             # Windows: HKCU\...\Run + .cmd；Linux: systemd 
 campus-auth uninstall           # 停掉并删干净
 ```
 
+`setup` 最后一步也会问要不要装，不用再跑一遍。
+
+配置默认写到 `%APPDATA%\campus-auth\config.toml`（POSIX 是 `~/.config/campus-auth/config.toml`），
+删掉解压出来的文件夹不影响自启。配置、`.url` 与日志在 POSIX 下是 0600。
+
 自启进程不继承你当前 shell 的环境变量，密码得放进钥匙串或配置文件，install 会提醒。
 日志在系统 state 目录（Windows `%LOCALAPPDATA%\campus-auth\watch.log`），`watch` 自己按
 1 MiB 轮转；三条实现都带自动重启，崩了会自己回来。
@@ -191,6 +225,7 @@ campus-auth uninstall           # 停掉并删干净
 
 | 命令 | 作用 |
 | --- | --- |
+| `setup` | 首次配置一条龙：填学号、存密码、当场验一次、可选自启（`--force` 重来） |
 | `probe` | 探测门户类型，不需要账号（`--url` 给地址） |
 | `init` | 生成配置模板（`--force` 覆盖） |
 | `adapters` | 列出内置适配层与验证状态 |

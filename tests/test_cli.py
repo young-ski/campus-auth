@@ -186,6 +186,9 @@ def test_install_without_config_is_rejected(
 ) -> None:
     monkeypatch.delenv("CAMPUS_AUTH_CONFIG", raising=False)
     monkeypatch.chdir(tmp_path)
+    # 别让本机真实的 %APPDATA%\campus-auth\config.toml 混进来
+    monkeypatch.setenv("APPDATA", str(tmp_path / "empty"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
     assert run(["install"]) == 2
 
 

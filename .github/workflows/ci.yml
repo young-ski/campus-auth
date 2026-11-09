@@ -72,6 +72,19 @@ jobs:
         run: |
           python tools/build_zipapp.py /tmp/campus-auth.pyz
           python /tmp/campus-auth.pyz adapters
+      - name: zipapp 要能被 python -m 和退出码契约正常对待
+        run: |
+          python /tmp/campus-auth.pyz probe --url nonsense && exit 1 || test $? -eq 2
+      - name: 发给同学的压缩包能构建、清单齐全
+        run: |
+          python tools/make_bundle.py /tmp/bundle/
+          python - "$(ls /tmp/bundle/*.zip)" <<'PY'
+          import sys, zipfile
+          names = sorted(n.rsplit("/", 1)[-1] for n in zipfile.ZipFile(sys.argv[1]).namelist())
+          assert names == ["SHA256SUMS", "campus-auth.pyz", "disclaimer.txt",
+                           "install-guide.txt", "install.cmd"], names
+          print("bundle ok:", names)
+          PY
       - name: 版本一致性
         run: python tools/check_version.py
       - name: install 产物的转义自检
@@ -142,3 +155,29 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: test ! -f "$HOME/Library/LaunchAgents/cn.campus-auth.watch.plist"
+
+  bundle:
+    # install.cmd 是同学双击的第一个东西：在这台真 Windows 上验一遍它的管道
+    name: 发给同学的包能跑起来
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python tools/make_bundle.py bundle/
+      - name: 解压后按同学的路径跑
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem bundle/*.zip | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath x
+          $dir = Get-ChildItem x -Directory | Select-Object -First 1
+          Push-Location $dir.FullName
+          # 不给输入：账号是空的，setup 必然退 2，脚本要把它变成失败而不是 Done
+          $out = '' | cmd /c install.cmd 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          $out
+          if ($out -notmatch 'SHA256 verified') { throw '校验和没跑' }
+          if ($out -match 'Done\.') { throw '空账号却报了 Done' }
+          if ($code -eq 0) { throw "install.cmd 退 0，应为失败：$code" }
+          Pop-Location

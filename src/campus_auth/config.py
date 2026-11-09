@@ -31,13 +31,25 @@ ENV_CONFIG = "CAMPUS_AUTH_CONFIG"
 
 def _default_config_paths() -> list[Path]:
     paths = [Path.cwd() / "campus-auth.toml"]
+    paths.append(default_config_path())
+    return paths
+
+
+def default_config_path() -> Path:
+    """用户级配置路径：放在这里，删掉安装目录也不影响自启。
+
+    和发现顺序里的最后一项是同一个文件，别各写各的。
+    """
     if sys.platform == "win32":
         base = os.environ.get("APPDATA")
-        if base:
-            paths.append(Path(base) / "campus-auth" / "config.toml")
-    else:
-        paths.append(Path.home() / ".config" / "campus-auth" / "config.toml")
-    return paths
+        return (
+            Path(base) / "campus-auth" / "config.toml"
+            if base
+            else Path.home() / ".campus-auth.toml"
+        )
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "campus-auth" / "config.toml"
 
 
 @dataclass

@@ -2,6 +2,32 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 1.7.4（2026-11-09）
+
+### 新增
+
+- **`setup`**：一条命令做完首次配置 —— 先讲清风险，再写配置、让人填学号、存密码
+  （钥匙串优先，进不去就写配置文件）、当场登一次、最后问要不要开机自启。重跑（`--force`）
+  会沿用的学号，不再反复问
+- **发给同学的 Windows 压缩包**：`campus-auth-<版本>-win.zip`，内含 `install.cmd`
+  （查 Python、核 SHA256、调 `setup`）、`install-guide.txt`、`disclaimer.txt`。发版自动挂到 Release
+- 配置默认位置统一成 `~/.config/campus-auth/config.toml` / `%APPDATA%\campus-auth\config.toml`，
+  和配置文件发现顺序的最后一项是同一个文件；删掉解压目录不影响自启
+
+### 修复
+
+- **`campus-auth.pyz` 永远退 0**：`zipapp` 的 `main=` 生成的入口不调 `sys.exit`，退出码契约
+  在单文件形态上整个失效（计划任务与 `check` 都靠它）。改成自己写入口
+- `cli.main` 里 `errno 22` 一律当断管：会写文件的命令自己 `catch OSError`，`init` 写不进去
+  时退 2 并说明
+- `install` 认不出「密码只来自环境变量」，装完 watch 必失败：现在 dry-run 就警告
+
+### 文档
+
+- README 安装段分成「不会命令行的同学」和「会命令行」，前者就是压缩包那条路，
+  并写明装之前要先连热点/流量
+- CONTRIBUTING 发布段补压缩包的生成与自检要求
+
 ## 1.7.3（2026-11-09）
 
 ### 修复

@@ -25,6 +25,7 @@ from .commands import (
     cmd_new_adapter,
     cmd_password,
     cmd_probe,
+    cmd_setup,
     cmd_status,
     cmd_unbind,
     cmd_uninstall,
@@ -119,6 +120,15 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("-o", "--output", metavar="路径", help="写到哪个文件")
     init.add_argument("-f", "--force", action="store_true", help="覆盖已有文件")
     init.set_defaults(func=cmd_init)
+
+    setup = sub.add_parser(
+        "setup",
+        parents=[plain, identity],
+        help="首次配置一条龙（写配置、存密码、当场验一次）",
+        description="写给刚拿到文件的人：填学号、存密码、验一次、可选开机自启。",
+    )
+    setup.add_argument("-f", "--force", action="store_true", help="覆盖已有配置")
+    setup.set_defaults(func=cmd_setup)
 
     sub.add_parser(
         "adapters",

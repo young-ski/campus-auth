@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import sys
+from pathlib import Path
 
 from ..config import Config, load
 from ..runner import Context, build, require_campus
@@ -96,6 +99,17 @@ def _prepare(args: argparse.Namespace, config: Config) -> Context:
     ctx = build(config)
     require_campus(ctx)
     return ctx
+
+
+def _restrict(path: Path) -> None:
+    """只给本人读写。配置、快捷方式、日志里都有密码或它的等价物。
+
+    Windows 没有 POSIX 权限位，靠目录 ACL；失败不算致命。
+    """
+    if os.name == "nt":
+        return
+    with contextlib.suppress(OSError):
+        path.chmod(0o600)
 
 
 def _payload_ok(payload: dict) -> bool:

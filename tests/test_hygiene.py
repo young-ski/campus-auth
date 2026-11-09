@@ -94,6 +94,29 @@ def test_readme_has_an_english_first_screen() -> None:
     assert "**English**" in head
 
 
+def test_readme_names_the_school_on_the_first_screen() -> None:
+    """单校工具：先看是不是本校，别让人先读一遍多校架构。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "河南城建学院" in text[:1500]
+
+
+def test_readme_carries_the_self_risk_disclaimer() -> None:
+    """学校没有明文规定，所以免责得写在首屏并说清代价。"""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "自担风险" in text[:1500]
+    assert "免责与风险" in text
+    assert "不绕过" in text or "计费" in text
+
+
+def test_init_tells_you_to_confirm_the_school(tmp_path: Path, capsys) -> None:
+    from campus_auth import cli
+
+    assert cli.main(["init", "-o", str(tmp_path / "c.toml")]) == 0
+    out = capsys.readouterr().out
+    assert "河南城建学院" in out
+    assert "generic" in out
+
+
 def test_school_catalog_states_its_entry_criteria() -> None:
     text = (ROOT / "docs" / "schools.md").read_text(encoding="utf-8")
     assert "收录标准" in text

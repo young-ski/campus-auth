@@ -63,5 +63,6 @@ def discover_portal(transport: Transport, *, timeout: float = TIMEOUT) -> str:
             continue
     raise ConfigError(
         "没从劫持页找到门户地址（可能已经在线，或不在校园网内）："
-        "用 `campus-auth probe --url http://<门户IP>` 显式指定。"
+        "用 `campus-auth probe --url https://<门户IP>` 显式指定；"
+        "已在线时 probe 也会自动退回适配层地址。"
     )

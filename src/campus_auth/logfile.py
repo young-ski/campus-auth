@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from pathlib import Path
 from typing import TextIO
 
@@ -27,6 +28,10 @@ class RotatingLog:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._handle = self.path.open("a", encoding="utf-8", errors="replace")
         self._size = self.path.stat().st_size
+        with contextlib.suppress(OSError):
+            # 日志里有密文；Windows 没有权限位，失败就算了
+            if os.name != "nt":
+                self.path.chmod(0o600)
 
     def _rotate(self) -> None:
         """尽力轮转：另一个进程正开着同名文件时 `replace` 会失败，别让它打死调用方。"""

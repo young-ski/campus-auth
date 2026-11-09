@@ -1,8 +1,9 @@
-"""把 `watch` 装成登录自启的服务，以及卸掉它。
+r"""把 `watch` 装成登录自启的服务，以及卸掉它。
 
 只生成当前平台认的东西，别的一律不做：
 
-* Windows → 计划任务（`schtasks`，登录时启动）＋ 一个带日志重定向的 `.cmd` 包装
+* Windows → `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`（登录时拉起）＋ 一个循环重启的
+  `.cmd` 包装（不走管理员，也不用 `schtasks`）
 * Linux   → systemd **用户** unit（`Restart=always`，日志追加到 state 目录）
 * macOS   → launchd LaunchAgent（`KeepAlive`，同上）
 

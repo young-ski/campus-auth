@@ -11,10 +11,10 @@ from pathlib import Path
 from .. import __version__, adapters, credentials, net
 from .. import install as installer
 from ..config import ENV_PASSWORD, find_config_file
-from ..errors import EXIT_CONFIG, EXIT_OK, CampusAuthError
+from ..errors import EXIT_CONFIG, EXIT_OK, CampusAuthError, ConfigError
 from ..probe import probe
 from ..runner import _host_port, build
-from ._common import CONFIG_TEMPLATE, _config, _err, _say
+from ._common import CONFIG_TEMPLATE, _config, _err, _restrict, _say
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -24,18 +24,23 @@ def cmd_init(args: argparse.Namespace) -> int:
         return EXIT_CONFIG
     adapter = adapters.get_adapter(args.adapter or "huuc")
     base_url = args.url or adapter.base_url
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        CONFIG_TEMPLATE.format(
-            env=ENV_PASSWORD,
-            adapter=adapter.name,
-            base_url=base_url,
-            operators=" / ".join(adapter.operator_suffixes) or "（本适配层无）",
-        ),
-        encoding="utf-8",
+    content = CONFIG_TEMPLATE.format(
+        env=ENV_PASSWORD,
+        adapter=adapter.name,
+        base_url=base_url,
+        operators=" / ".join(adapter.operator_suffixes) or "（本适配层无）",
     )
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        # 非法文件名（Windows 的 `?`）、路径上报错、只读目录都走这里，别静默成功
+        raise ConfigError(f"写不了 {target}: {exc}") from exc
+    _restrict(target)
     _say(f"已写入 {target}")
     _say(f"用的是 {adapter.name}（{adapter.school}），门户 {base_url}")
+    if adapter.name == "huuc":
+        _say("↑ 这是给河南城建学院的。确认自己是本校；不是的话加 --adapter generic 重来。")
     if adapter.status != "已验证":
         _say(f"! 这个适配层的状态是「{adapter.status}」：先跑 `campus-auth probe` 或用 --url 核实")
     _say("下一步：填 account，然后存密码 —— `campus-auth password`（交互式，不回显）")
@@ -99,10 +104,12 @@ def cmd_urls(args: argparse.Namespace) -> int:
         (outdir / f"{name}.url").write_text(
             f"[InternetShortcut]\nURL={url}\n", encoding="ascii", newline="\n"
         )
+        _restrict(outdir / f"{name}.url")
         if os.name != "nt":
             (outdir / f"{name}.desktop").write_text(
                 f"[Desktop Entry]\nType=Link\nName={name}\nURL={url}\n", encoding="utf-8"
             )
+            _restrict(outdir / f"{name}.desktop")
     _say(f"写入 {outdir}/: {', '.join(name for name, _ in targets)}")
     if post:
         _say(
@@ -126,6 +133,9 @@ def cmd_install(args: argparse.Namespace) -> int:
     _say(f"要装的是: {service.kind} → {service.path}")
     if not config.password:
         _say("! 没读到密码：自启不继承当前 shell 的环境变量，先 `campus-auth password` 或写进配置")
+    elif config.password_source == f"${ENV_PASSWORD}":
+        _say("! 密码只来自环境变量：自启进程不继承它，watch 会拿不到密码。")
+        _say("  改用 `campus-auth password`（存钥匙串），或在配置文件里写 password。")
     if args.dry_run:
         _say("")
         _say(service.content.rstrip())

@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import re
+
 from ..adapters.base import Adapter, LoginResult
 from ..crypto import xor_key
 
@@ -29,6 +31,7 @@ SUBNET_ZONES = {
 }
 
 HINTS = {
+    "AC999": "账号不对（门户码 AC999）：确认是纯数字学号、别带 @ 后缀；新生账号可能还没开通。",
     "unbind isp uid": "运营商侧还没绑定这个账号：宿舍请确认已开通宽带，或换 -w cmcc。",
     "AC认证失败": "AC 认证失败，多因运营商侧未开通或该 SSID 只收特定运营商。",
     "账号或密码错误": "账号或密码不对；账号是纯数字学号，不要带 @ 后缀（后缀由 -w 拼）。",
@@ -48,7 +51,7 @@ class HuucAdapter(Adapter):
             operator_suffixes={"cmcc": "@cmcc", "unicom": "@unicom", "dx": "@dx"},
             js_version="4.2.1",
             status="已验证",
-            notes=f"门户 IP {PORTAL_IP}；netauth.huuc.edu.cn:802。",
+            notes=f"门户 IP {PORTAL_IP}（只收 HTTPS）；netauth.huuc.edu.cn:802。",
         )
 
     def zone_of(self, ip: str, ssid: str | None) -> tuple[str, str | None, str | None, str]:
@@ -74,8 +77,11 @@ class HuucAdapter(Adapter):
         for needle, hint in HINTS.items():
             if needle in msg:
                 return hint
-        if "AC认证失败" in msg or "isp uid" in msg:
-            return HINTS["AC认证失败"]
+        code = re.search(r"\bAC\d{3}\b", msg)
+        if code:
+            return (
+                f"门户拒绝码 {code.group()}：多半是账号或运营商侧的问题，把这条原文发出来更好定位。"
+            )
         return super().hint_for(ret_code, msg)
 
     def interpret_login(self, resp):

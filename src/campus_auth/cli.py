@@ -52,6 +52,15 @@ def _parser() -> argparse.ArgumentParser:
         "--show-secrets", action="store_true", help="报错里的密码不打码（默认打码）"
     )
     # 参数分三档：每个命令只挂它真用得上的，别让 `probe --help` 里冒 --password-stdin
+    # argparse 的子命令默认值会盖掉根参数，所以副本用 SUPPRESS：给过才落值
+    secrets = argparse.ArgumentParser(add_help=False)
+    secrets.add_argument(
+        "--show-secrets",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="报错里的密码不打码（默认打码）",
+    )
+
     essential = argparse.ArgumentParser(add_help=False)
     essential.add_argument("--config", metavar="路径", help="配置文件路径")
     essential.add_argument("-a", "--account", metavar="学号", help="学号，纯数字，不带 @ 后缀")
@@ -78,27 +87,27 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     # 只带账号、不带密码的父参数（注销 / 解绑 / 状态 / 检查都不需要密码）
-    accounting = argparse.ArgumentParser(add_help=False)
+    accounting = argparse.ArgumentParser(add_help=False, parents=[secrets])
     accounting.add_argument("--config", metavar="路径", help="配置文件路径")
     accounting.add_argument("-a", "--account", metavar="学号", help="学号，纯数字，不带 @ 后缀")
     accounting.add_argument("--json", action="store_true", help="输出 JSON，给脚本读")
 
     # 什么身份参数都没有的命令
-    minimal = argparse.ArgumentParser(add_help=False)
+    minimal = argparse.ArgumentParser(add_help=False, parents=[secrets])
     minimal.add_argument("--config", metavar="路径", help="配置文件路径")
     minimal.add_argument("--json", action="store_true", help="输出 JSON，给脚本读")
 
     # 不实现 --json 的命令就用这两个：宁可 argparse 报错，也别静默吃 flag
-    plain = argparse.ArgumentParser(add_help=False)
+    plain = argparse.ArgumentParser(add_help=False, parents=[secrets])
     plain.add_argument("--config", metavar="路径", help="配置文件路径")
 
-    creds = argparse.ArgumentParser(add_help=False)
+    creds = argparse.ArgumentParser(add_help=False, parents=[secrets])
     creds.add_argument("--config", metavar="路径", help="配置文件路径")
     creds.add_argument("-a", "--account", metavar="学号", help="学号，纯数字，不带 @ 后缀")
     creds.add_argument("-p", "--password", metavar="密码", help="密码（会留在 shell 历史里）")
     creds.add_argument("--password-stdin", action="store_true", help="从标准输入读密码")
 
-    auth_parents = [essential, identity, tuning]
+    auth_parents = [essential, identity, tuning, secrets]
     sub = parser.add_subparsers(dest="command", required=True, metavar="命令")
 
     init = sub.add_parser(
@@ -132,14 +141,14 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser(
         "logout",
-        parents=[essential, identity, tuning],
+        parents=[essential, identity, tuning, secrets],
         help="注销当前账号",
         description="让门户断开这台机器的会话。",
     ).set_defaults(func=cmd_logout)
 
     sub.add_parser(
         "unbind",
-        parents=[essential, identity, tuning],
+        parents=[essential, identity, tuning, secrets],
         help="解除 IP / MAC 绑定",
         description="换设备或提示 IP 被绑时用。只解绑，不注销。",
     ).set_defaults(func=cmd_unbind)
@@ -249,8 +258,13 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _force_utf8() -> None:
-    """重定向到文件/管道时也保证输出是 UTF-8，别变成 GBK 乱码。"""
+    """重定向到文件/管道时统一成 UTF-8；控制台保持它自己的编码。
+
+    在 cp936 控制台上硬推 UTF-8 会被按 GBK 解码成"置信�?"，所以 tty 不动。
+    """
     for stream in (sys.stdout, sys.stderr):
+        if stream is None or getattr(stream, "isatty", lambda: False)():
+            continue
         with contextlib.suppress(AttributeError, ValueError, OSError):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -274,7 +288,9 @@ def main(argv: list[str] | None = None) -> int:
         _err("已中断")
         return 130
     except (BrokenPipeError, OSError) as exc:
-        # `campus-auth ... | head` 会在这里断掉；Windows 上是 errno 22，POSIX 是 32
+        # `campus-auth ... | head` 会在这里断掉：POSIX 是 errno 32，Windows 管道是 22。
+        # 22 在 Windows 上也可能真是写失败，分不开 —— 所以会写文件的命令自己 catch
+        # OSError（`init` 就是这么做的），这里只兜住管道。
         if isinstance(exc, BrokenPipeError) or getattr(exc, "errno", None) in {22, 32}:
             with contextlib.suppress(OSError, ValueError):
                 sys.stdout = open(os.devnull, "w")  # noqa: SIM115

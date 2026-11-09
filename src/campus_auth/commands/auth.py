@@ -140,14 +140,17 @@ def cmd_login(args: argparse.Namespace) -> int:
         _note(args, f"! {result.hint}")
 
     online = False
-    for attempt in range(3):
+    # 被拒时服务端已经给了结论，再轮询 3 次只是白等（真实门户上要 5 秒起）
+    attempts = 3 if result.ok else 1
+    for attempt in range(attempts):
         try:
             if ctx.portal.mine():
                 online = True
                 break
         except CampusAuthError:
             pass
-        time.sleep(0.8 * (attempt + 1))
+        if attempt < attempts - 1:
+            time.sleep(0.8 * (attempt + 1))
 
     _note(args, "结果: 已在线" if online else "结果: 未确认在线")
     if args.json:

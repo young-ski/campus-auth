@@ -11,12 +11,19 @@ from ..config import Config
 from ..errors import EXIT_CONFIG, EXIT_ENV, EXIT_OK, EXIT_REJECTED
 from ._common import _config, _say
 
+KEYRING_HINT = (
+    "钥匙串用不了。两条路选一条：\n"
+    '  1) 装可选依赖后再存：pip install "campus-auth[keyring]"\n'
+    '  2) 写进配置文件（明文，注意别提交）：password = "你的密码"\n'
+    "  也可以用环境变量 CAMPUS_AUTH_PASSWORD（只在当前 shell 有效）。"
+)
+
 
 def _remember_password(config: Config) -> None:
     if credentials.set(config.adapter, config.account, config.password):
         _say("已把密码存进系统钥匙串。")
     else:
-        _say('! 钥匙串存不进去：先 `pip install "campus-auth[keyring]"`。')
+        _say(f"! {KEYRING_HINT}")
 
 
 def cmd_password(args: argparse.Namespace) -> int:
@@ -32,7 +39,7 @@ def cmd_password(args: argparse.Namespace) -> int:
         if credentials.available():
             _say(f"! 删不掉 {config.adapter}/{config.account}：钥匙串后端报错，稍后再试。")
         else:
-            _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+            _say(f"! {KEYRING_HINT}")
         return EXIT_ENV
 
     if args.show:
@@ -62,5 +69,5 @@ def cmd_password(args: argparse.Namespace) -> int:
     if credentials.set(config.adapter, config.account, secret):
         _say(f"已存入钥匙串 {config.adapter}/{config.account}。")
         return EXIT_OK
-    _say('! 钥匙串不可用：先 `pip install "campus-auth[keyring]"`。')
+    _say(f"! {KEYRING_HINT}")
     return EXIT_ENV

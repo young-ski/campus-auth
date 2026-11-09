@@ -34,7 +34,15 @@ PROBE_PATHS = (
     "/eportal/InterFace.do?method=getOnlineUserInfo",
 )
 
-_JS_SRC = re.compile(r"""<script[^>]+src=["']([^"']+\.js[^"']*)["']""", re.IGNORECASE)
+# 属性值可能带引号也可能不带（Vue 打包出来的首页就是 `src=/eportal/public/...js`）。
+_JS_SRC = re.compile(
+    r"""<script\b[^>]*?\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))""", re.IGNORECASE
+)
+
+# 首页不挂 JS 时的兜底候选；有的门户把加密函数放在登录页里。
+# 命中 404 桩（`404 eportal action ... not found`）就跳过，别把它当样本。
+FALLBACK_JS = ("/eportal/portal/js/a41.js", "/eportal/portal/js/portal.js")
+
 # 劫持页把我们指去门户时，跟着走一步
 _CAPTIVE = re.compile(
     r"""(?:location(?:\.href)?\s*=\s*|url\s*=\s*)['"]?(https?://[^'"\s>]{4,})""", re.IGNORECASE
@@ -84,6 +92,16 @@ class Analysis:
         }
 
 
+def _js_srcs(text: str) -> list[str]:
+    """页面里引用到的 .js 地址（三种引号写法都认）。"""
+    found: list[str] = []
+    for match in _JS_SRC.finditer(text):
+        src = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+        if src and ".js" in src.lower():
+            found.append(src)
+    return found
+
+
 def _check(needle: str | re.Pattern[str], haystack: str) -> bool:
     if isinstance(needle, re.Pattern):
         return bool(needle.search(haystack))
@@ -97,6 +115,14 @@ DRCOM_SIGNALS: list[tuple[str, int, str, str, str | re.Pattern[str]]] = [
     ("JS 里有 enc_pwd（异或加密函数）", 30, "drcom", "js", "enc_pwd"),
     ("JS 里有 getkey（密钥派生）", 25, "drcom", "js", "getkey"),
     ("出现 wlan_user_ip 参数", 20, "drcom", "all", "wlan_user_ip"),
+    # 门户在线时会话接口照常回结构；字段名是 Dr.COM 独有的，已在线也判得出来
+    (
+        "会话接口返回 online_session / online_time",
+        30,
+        "drcom",
+        "body",
+        re.compile(r'"(?:online_session|online_time)"\s*:'),
+    ),
     (
         "响应含 ret_code / result 字段",
         15,
@@ -149,7 +175,7 @@ MARGIN = 10
 
 # 通用信号（wlan_user_ip、result 字段、nginx）谁都可能有，分数能凑够也不代表是它。
 # 判成"是 Dr.COM"必须有一条独有特征撑着。
-DISTINCTIVE = ("enc_pwd", "getkey")
+DISTINCTIVE = ("enc_pwd", "getkey", "online_session")
 
 
 def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = None) -> Analysis:
@@ -181,6 +207,8 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
     drcom = run(DRCOM_SIGNALS)
     ruijie = run(RUIJIE_SIGNALS)
     srun = run(SRUN_SIGNALS)
+    # 门户已经有人在用时会话接口照常回结构：这是"已在线"，不是异常
+    online = bool(re.search(r'"online_session"\s*:', body_text))
 
     notes: list[str] = []
     missing: list[str] = []
@@ -222,6 +250,9 @@ def analyze(samples: Mapping[str, str], *, server: str = "", port: int | None = 
             if not any(s.name == name and s.hit for s in evidence):
                 missing.append(f"{name}（+{weight}）")
 
+    if online:
+        notes.append("门户显示已有在线会话：已在线时 probe 同样有效，登录前不必先注销")
+
     if not eportal:
         notes.append("没找到 eportal 路径：可能不是网页认证门户，或登录前被重定向到别处")
     if not any(p in all_text for p in ("eportal", "srun", "userAccount".lower(), "<form")):
@@ -239,7 +270,7 @@ def _absorb(url: str, fetch, js_chunks: list[str]) -> str:
         text = fetch(url).text
     except TransportError:
         return ""
-    for src in _JS_SRC.findall(text)[:MAX_JS]:
+    for src in _js_srcs(text)[:MAX_JS]:
         js_url = urllib.parse.urljoin(url, src)
         try:
             js_chunks.append(fetch(js_url).text)
@@ -257,6 +288,7 @@ def collect(
     follow: bool = True,
     retries: int = 0,
     info: dict[str, object] | None = None,
+    allow_scheme_retry: bool = True,
 ) -> tuple[dict[str, str], str, int | None]:
     """按 PROBE_PATHS 采样，并顺带抓 1 个 JS（可跨源，路径由页面自己给）。
 
@@ -271,6 +303,8 @@ def collect(
     except ValueError as exc:
         raise ConfigError(f"{base_url!r} 的端口不合法（{exc}）") from exc
     send = transport or UrllibTransport(verify_tls=verify)
+    if info is not None:
+        info["base"] = base_url  # 换过 scheme 时，调用方要报实际用的地址
 
     def fetch(url: str, limit: int = MAX_BODY) -> Response:
         last: Exception | None = None
@@ -287,6 +321,7 @@ def collect(
     samples: dict[str, str] = {}
     server = ""
     js_chunks: list[str] = []
+    statuses: list[int] = []
     ok = 0
 
     def grab(path: str) -> tuple[str, str, Response] | None:
@@ -303,11 +338,12 @@ def collect(
                 continue
             path, url, response = got
             ok += 1
+            statuses.append(response.status)
             server = server or response.headers.get("server", "")
             text = response.text
             samples["body"] = text if path == "/" else samples.get("body", "") + "\n" + text
             if path == "/":
-                for src in _JS_SRC.findall(text)[:MAX_JS]:
+                for src in _js_srcs(text)[:MAX_JS]:
                     js_url = urllib.parse.urljoin(url, src)
                     try:
                         js_chunks.append(fetch(js_url).text)
@@ -325,8 +361,42 @@ def collect(
             if info is not None:
                 info["followed"] = target
 
+    # 首页一个 JS 都没引用时补两道固定候选：加密函数有时只挂在登录页上。
+    if not js_chunks:
+        for candidate in FALLBACK_JS:
+            js_url = urllib.parse.urljoin(base_url.rstrip("/") + "/", candidate.lstrip("/"))
+            try:
+                text = fetch(js_url).text
+            except TransportError:
+                continue
+            if "404 eportal action" in text:
+                continue  # 门户对不存在的 action 也回 200
+            js_chunks.append(text)
+            break
+
     if not ok:
         raise TransportError(f"{base_url} 一条探针都没通 —— 多半不在校园网内，或端口/协议写错了")
+
+    # 有的门户改成了只收 HTTPS，按 http://<旧IP> 探会一律 400：换 https 再探一遍
+    if (
+        allow_scheme_retry
+        and parts.scheme == "http"
+        and statuses
+        and all(status == 400 for status in statuses)
+    ):
+        try:
+            return collect(
+                "https://" + base_url[len("http://") :],
+                timeout=timeout,
+                verify=verify,
+                transport=transport,
+                follow=follow,
+                retries=retries,
+                info=info,
+                allow_scheme_retry=False,
+            )
+        except TransportError:
+            pass
     if js_chunks:
         samples["js"] = "\n".join(js_chunks)
     samples.setdefault("body", "")
@@ -357,7 +427,7 @@ def probe(
     if followed:
         host = urllib.parse.urlsplit(str(followed)).hostname or ""
         analysis.notes.append(f"跟着劫持跳转到了 {host}")
-    return analysis, base_url
+    return analysis, str(info.get("base", base_url))
 
 
 JSON_SCHEMA_VERSION = 1

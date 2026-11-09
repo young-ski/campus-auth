@@ -249,6 +249,95 @@ def test_probe_out_of_range_port_is_a_config_error(campus: Path) -> None:
     assert cli.main(["probe", "--url", "http://h:99999"]) == 2
 
 
+def test_unquoted_script_src_is_followed() -> None:
+    """本校门户是 Vue SPA，`src=` 后面没引号；旧正则只认带引号的写法，JS 永远抓不到。"""
+    pages = {
+        "http://10.0.0.1/": (
+            "<div id=app></div><script src=/eportal/public/static/js/app.38f7.js></script>"
+        ),
+        "http://10.0.0.1/eportal/public/static/js/app.38f7.js": (
+            "drcom wlan_user_ip online_session:'x'"
+        ),
+    }
+    samples, _server, _port = probe.collect("http://10.0.0.1", transport=DictTransport(pages))
+    assert "drcom" in samples["js"]
+
+
+def test_fallback_js_is_tried_when_page_links_none() -> None:
+    """有的门户把 JS 藏在登录页而不是首页；固定候选补一刀，404 桩要能识别。"""
+    transport = DictTransport(
+        {
+            "http://10.0.0.1/": "<div id=app></div>",
+            "http://10.0.0.1/eportal/portal/js/a41.js": (
+                'jsonpReturn({"code":0,"msg":"404 eportal action a41.js not found"})'
+            ),
+            "http://10.0.0.1/eportal/portal/js/portal.js": "enc_pwd getkey wlan_user_ip",
+        }
+    )
+    samples, _server, _port = probe.collect("http://10.0.0.1", transport=transport)
+    assert "enc_pwd" in samples["js"]
+
+
+ONLINE_BODY = (
+    'probe1003({"result":1,"msg":"获取用户在线信息成功！","list":[{"online_session":23137,'
+    '"online_time":"2026-11-09 20:29:03","online_ip":"10.152.59.163"}],"total":1});'
+)
+
+
+def test_online_session_counts_as_distinctive_evidence() -> None:
+    """已在线是多数人首试状态：会话结构本身就是独有证据，别再判成"像"或"不认"。"""
+    analysis = analyze({"body": ONLINE_BODY})
+    assert analysis.verdict == "drcom"
+    assert analysis.is_drcom
+
+
+def test_online_state_is_named_in_notes() -> None:
+    analysis = analyze({"body": ONLINE_BODY})
+    assert any("已在线" in note for note in analysis.notes)
+
+
+def test_http_portal_retries_over_https() -> None:
+    """门户只收 HTTPS，按 `http://<IP>` 探会 400；要自动换 https 再探一遍。"""
+    from campus_auth.transport import Response
+
+    seen: list[str] = []
+
+    class HttpsOnly:
+        def send(self, url: str, **_kwargs) -> Response:
+            seen.append(url)
+            if url.startswith("http://"):
+                return Response(400, "Bad Request", {"server": "nginx"})
+            return Response(200, "drcom wlan_user_ip online_session:", {"server": "nginx"})
+
+    analysis, used = probe.probe("http://10.210.213.208:802", transport=HttpsOnly())
+    assert analysis.is_drcom
+    assert any(url.startswith("https://") for url in seen)
+    assert used.startswith("https://")  # 结论里报实际用的地址，别报回跳过的 http
+
+
+def test_probe_falls_back_to_adapter_url_when_discover_fails(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """已在线时劫持页捞不到地址；单校工具已知本校地址，别再把用户推给 --url。"""
+    from campus_auth.errors import ConfigError
+
+    def boom(*_args, **_kwargs):
+        raise ConfigError("没从劫持页找到门户地址")
+
+    monkeypatch.setattr(scan, "discover_portal", boom)
+    seen: dict[str, str] = {}
+
+    def grab(url, **_kwargs):
+        seen["url"] = url
+        return analyze(DRCOM_SAMPLES), url
+
+    monkeypatch.setattr(scan, "probe", grab)
+    assert cli.main(["probe"]) == 0
+    captured = capsys.readouterr()
+    assert seen["url"] == "https://netauth.huuc.edu.cn:802"
+    assert "改用适配层地址" in captured.out + captured.err
+
+
 def test_probe_retries_a_failing_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     """`--retries` 以前挂在 help 里但没人用。"""
     from fake_transport import DictTransport

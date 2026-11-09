@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -325,10 +326,159 @@ def test_login_remember_failure_is_not_fatal(
     monkeypatch.setattr(credentials, "set", lambda *_a: False)
     fake_portal(monkeypatch)
     assert run(["login", "-a", "0814", "-p", "pw", "--remember"]) == 0
-    assert "钥匙串存不进去" in capsys.readouterr().out
+    assert "钥匙串用不了" in capsys.readouterr().out
 
 
-# ---------- watch --log ----------
+# ---------- 首跑阻塞（E2） ----------
+
+
+def test_password_without_keyring_gives_both_ways_out(campus: Path, monkeypatch, capsys) -> None:
+    """默认装法没有 keyring：只回一句"装 keyring"等于死路，得给配置文件和 env 两条路。"""
+    from campus_auth import credentials
+    from campus_auth.commands import account
+
+    monkeypatch.setattr(credentials, "available", lambda: False)
+    monkeypatch.setattr(credentials, "set", lambda *a: False)
+    monkeypatch.setattr(account.sys.stdin, "readline", lambda: "pw\n")
+    assert run(["password"]) == 3
+    msg = capsys.readouterr().out
+    assert "campus-auth[keyring]" in msg
+    assert "CAMPUS_AUTH_PASSWORD" in msg
+    assert "password = " in msg  # 直接可以抄进配置的那一行
+
+
+def test_rejected_login_does_not_poll_three_times(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """拒绝时再轮询 3 次就是白等 5 秒；只有服务端说 ok 才值得确认。"""
+    from campus_auth import net
+    from campus_auth.portal import Portal
+
+    calls = {"mine": 0}
+
+    def handler(url: str, _data):
+        if "online_list" in url:
+            calls["mine"] += 1
+            return (200, 'cb({"list": []})')
+        return (200, 'cb({"result":0,"ret_code":2,"msg":"AC999"})')
+
+    patch_send(monkeypatch, handler)
+    monkeypatch.setattr(net, "resolves", lambda host: True)
+    monkeypatch.setattr("campus_auth.portal.time.sleep", lambda _s: None)
+    monkeypatch.setattr(Portal, "prepare", lambda self: None)
+    assert run(["login"]) == 1
+    assert calls["mine"] == 2  # 登录前那次 + 登录后一次；不再白轮询 3 次
+
+
+def test_portal_code_is_translated(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    """AC999 是本校真会遇到的拒绝码，不能只回"ret_code=2，原文 AC999"。"""
+
+    def handler(url: str, _data):
+        if "online_list" in url:
+            return (200, 'cb({"list": []})')
+        return (200, 'cb({"result":0,"ret_code":2,"msg":"AC999"})')
+
+    patch_send(monkeypatch, handler)
+    run(["login"])
+    out = capsys.readouterr().out
+    assert "AC999" in out
+    assert "学号" in out
+
+
+def test_init_reports_unwritable_path(campus: Path, capsys) -> None:
+    """`init -o 'bad?.toml'` 曾 exit 0、无文件、无输出。"""
+    (campus / "blocker").write_text("x", encoding="utf-8")
+    assert run(["init", "-o", "blocker/x.toml"]) == 2
+    assert "写不了" in capsys.readouterr().err
+
+
+def test_show_secrets_is_accepted_after_the_subcommand(campus: Path) -> None:
+    from campus_auth.cli import _parser
+
+    args = _parser().parse_args(["status", "--show-secrets"])
+    assert args.show_secrets is True
+
+
+def test_show_secrets_before_the_subcommand_still_works() -> None:
+    from campus_auth.cli import _parser
+
+    args = _parser().parse_args(["--show-secrets", "status"])
+    assert args.show_secrets is True
+
+
+def test_install_warns_when_password_comes_from_env(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """自启不继承 shell 环境变量：密码只在 env 里时，装完 watch 必失败。"""
+    monkeypatch.setenv("CAMPUS_AUTH_PASSWORD", "fromenv")
+    monkeypatch.setattr("campus_auth.install.service_for", lambda path: _fake_service())
+    assert run(["install", "--dry-run"]) == 0
+    assert "环境变量" in capsys.readouterr().out
+
+
+def _fake_service():
+    from pathlib import Path
+
+    from campus_auth.install import Service
+
+    return Service(kind="x", path=Path("x.cmd"), log_path=Path("x.log"), content="x", create=[])
+
+
+def test_unexpected_oserror_is_not_swallowed_as_a_pipe(campus: Path, monkeypatch) -> None:
+    """errno 22 等于 Windows 管道断开，只能照旧吞掉；会写文件的命令得自己 catch。"""
+    from campus_auth import cli
+
+    def boom(_args):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(cli, "cmd_adapters", boom)
+    assert run(["adapters"]) == 0
+
+
+# ---------- 输出编码 ----------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows 没有 POSIX 权限位")
+def test_written_files_are_owner_only(campus: Path) -> None:
+    """配置和快捷方式里有密码或它的等价物，POSIX 下不该给同组/其他人读。"""
+    import stat
+
+    assert run(["init", "-o", "c.toml"]) == 0
+    assert stat.S_IMODE((campus / "c.toml").stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows 没有 POSIX 权限位")
+def test_log_file_is_owner_only(campus: Path) -> None:
+    import stat
+
+    from campus_auth.logfile import RotatingLog
+
+    log = RotatingLog(campus / "w.log")
+    log.write("x\n")
+    log.close()
+    assert stat.S_IMODE((campus / "w.log").stat().st_mode) == 0o600
+
+
+def test_tty_keeps_console_encoding(monkeypatch) -> None:
+    """cp936 控制台上强推 UTF-8 会变成乱码；只在重定向时统一成 UTF-8。"""
+    from campus_auth import cli
+
+    seen: list[tuple[bool, dict]] = []
+
+    class Stream:
+        def __init__(self, tty: bool) -> None:
+            self.tty = tty
+
+        def isatty(self) -> bool:
+            return self.tty
+
+        def reconfigure(self, **kw) -> None:
+            seen.append((self.tty, kw))
+
+    monkeypatch.setattr(cli.sys, "stdout", Stream(True))
+    monkeypatch.setattr(cli.sys, "stderr", Stream(False))
+    cli._force_utf8()
+    assert seen == [(False, {"encoding": "utf-8", "errors": "replace"})]
 
 
 def test_watch_writes_log_file(campus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -777,17 +927,54 @@ def test_probe_no_discover_falls_back_to_the_adapter(
     assert seen["url"].startswith("https://")
 
 
-def test_probe_reports_discovery_failure(
+def test_probe_falls_back_when_discovery_fails(
     campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
+    """已在线时劫持页捞不到地址：单校工具直接退回本校地址，别把用户推回 --url。"""
     from campus_auth.commands import scan
-    from campus_auth.errors import ConfigError
+    from campus_auth.probe import analyze
 
     def boom(*_a, **_k):
-        raise ConfigError("没从劫持页找到门户地址")
+        raise scan.ConfigError("没从劫持页找到门户地址")
 
     monkeypatch.setattr(scan, "discover_portal", boom)
-    assert run(["probe"]) == 2
+    monkeypatch.setattr(
+        scan, "probe", lambda url, **kw: (analyze({"js": "enc_pwd getkey wlan_user_ip"}), url)
+    )
+    assert run(["probe"]) == 0
+    captured = capsys.readouterr()
+    assert "改用适配层地址" in captured.out + captured.err
+
+
+def test_probe_no_discover_honours_the_adapter_flag(
+    campus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-discover` 曾直接读配置文件，把 `--adapter` 整个丢掉。"""
+    from campus_auth.commands import scan
+    from campus_auth.probe import analyze
+
+    seen: dict[str, str] = {}
+
+    def grab(url, **_kw):
+        seen["url"] = url
+        return analyze({"js": "enc_pwd getkey wlan_user_ip"}), url
+
+    monkeypatch.setattr(scan, "probe", grab)
+    assert run(["probe", "--no-discover", "--adapter", "generic"]) == 0
+    assert seen["url"] == "http://10.0.0.1:8080"
+
+
+def test_probe_still_fails_when_no_address_anywhere(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """发现失败、适配层也不认识：这才是真没地址，退回 2 并教怎么写 --url。"""
+    from campus_auth.commands import scan
+
+    def boom(*_a, **_k):
+        raise scan.ConfigError("没从劫持页找到门户地址")
+
+    monkeypatch.setattr(scan, "discover_portal", boom)
+    assert run(["probe", "--adapter", "no-such-adapter"]) == 2
     captured = capsys.readouterr()
     assert "--url" in captured.err + captured.out
 

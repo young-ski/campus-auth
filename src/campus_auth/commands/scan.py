@@ -25,14 +25,23 @@ def _fail(args: argparse.Namespace, exc: CampusAuthError, hint: str) -> int:
 
 
 def _target(args: argparse.Namespace) -> str:
-    """地址优先级：显式 `--url` > 劫持页里发现的 > 适配层默认值。"""
+    """地址优先级：显式 `--url` > 劫持页里发现的 > 适配层默认值。
+
+    已在线时劫持页捞不到东西，这时不该把人推回 `--url`：单校工具的默认地址本来就是本校门户。
+    """
     if args.url:
         return args.url
     if getattr(args, "no_discover", False):
         return _adapter_base_url(args)
-    discovered = discover_portal(
-        UrllibTransport(verify_tls=args.verify_tls), timeout=args.timeout or TIMEOUT
-    )
+    try:
+        discovered = discover_portal(
+            UrllibTransport(verify_tls=args.verify_tls), timeout=args.timeout or TIMEOUT
+        )
+    except ConfigError as exc:
+        fallback = _adapter_base_url(args)
+        reason = str(exc).splitlines()[0]
+        _note(args, f"（没从劫持页找到地址：{reason}；改用适配层地址 {fallback}）")
+        return fallback
     _note(args, f"（地址是从劫持页发现的：{discovered}）")
     return discovered
 
@@ -41,7 +50,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     try:
         target = _target(args)
     except ConfigError as exc:
-        return _fail(args, exc, "提示：用 `--url http://<门户IP>` 显式指定门户地址。")
+        return _fail(args, exc, "提示：用 `--url https://<门户IP>` 显式指定门户地址。")
     try:
         analysis, used = probe(
             target,
@@ -77,7 +86,10 @@ def cmd_probe(args: argparse.Namespace) -> int:
         _say(f"! {note}")
     _say("")
     advice = {
-        "drcom": "照 CONTRIBUTING 抄一份 generic 适配层，主要改 base_url、路径和密钥函数。",
+        "drcom": (
+            "本校（huuc）直接 `campus-auth init`，填账号后 `login`；"
+            "外校照 CONTRIBUTING 改 generic。"
+        ),
         "likely-drcom": "像 Dr.COM 但证据不够，先 F12 抓一次真登录请求再动手。",
         "ruijie": "锐捷不在本项目范围内：换别的工具，或按 CONTRIBUTING 另写适配层。",
         "srun": "深澜不在本项目范围内：换别的工具，或按 CONTRIBUTING 另写适配层。",
@@ -90,5 +102,9 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def _adapter_base_url(args: argparse.Namespace) -> str:
-    config = load(args.config, {})
+    overrides = {
+        "adapter": getattr(args, "adapter", None),
+        "base_url": getattr(args, "url", None),
+    }
+    config = load(args.config, overrides)
     return config.base_url or adapters.get_adapter(config.adapter).base_url

@@ -332,6 +332,20 @@ def test_login_remember_failure_is_not_fatal(
 # ---------- 首跑阻塞（E2） ----------
 
 
+def test_init_skips_the_password_step_when_keyring_is_missing(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """没装 keyring 还叫人跑 `campus-auth password`，只会换来 exit 3。"""
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "available", lambda: False)
+    assert run(["init", "-o", "c.toml"]) == 0
+    out = capsys.readouterr().out
+    assert "两条路" in out
+    assert "campus-auth[keyring]" in out
+    assert "再存密码" not in out
+
+
 def test_password_without_keyring_gives_both_ways_out(campus: Path, monkeypatch, capsys) -> None:
     """默认装法没有 keyring：只回一句"装 keyring"等于死路，得给配置文件和 env 两条路。"""
     from campus_auth import credentials

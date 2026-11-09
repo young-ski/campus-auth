@@ -49,7 +49,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     else:
         _say(
             "再放密码，两条路选一条：装可选依赖后 `campus-auth password`"
-            f'（pip install "campus-auth[keyring]"），或直接在这份配置里写 password。'
+            '（pip install "campus-auth[keyring]"），或直接在这份配置里写 password。'
         )
         _say(f"! 临时用也可以设 ${ENV_PASSWORD}，但它只在当前 shell 有效。")
     _say("填完跑 `campus-auth status` 自检：没配好它会直接指出来")

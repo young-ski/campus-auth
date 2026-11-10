@@ -290,6 +290,8 @@ campus-auth status --adapter ./my_school.py:ADAPTER --url http://10.0.0.9:8080
 
 能接受再用。只想临时试一次就手动 `campus-auth login`，别装自启。
 
+要发给别人的话，文案和反馈模板在 [`docs/outreach.md`](https://github.com/young-ski/campus-auth/blob/main/docs/outreach.md)。
+
 漏洞与凭据相关的报告走 [SECURITY.md](https://github.com/young-ski/campus-auth/blob/main/SECURITY.md) 的私下通道；协议来自公开前端代码和本机抓包，
 不含校内凭据。
 

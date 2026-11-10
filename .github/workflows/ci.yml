@@ -181,3 +181,5 @@ jobs:
           if ($out -match 'Done\.') { throw '空账号却报了 Done' }
           if ($code -eq 0) { throw "install.cmd 退 0，应为失败：$code" }
           Pop-Location
+          # 这一步就是期望「非零退出」；runner 会在末尾按 $LASTEXITCODE 判红，所以显式归零
+          exit 0

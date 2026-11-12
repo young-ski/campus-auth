@@ -32,6 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       - name: Lint
+        # 别用 `a && b`：第一步失败时第二步的报错就不显示了
         run: |
           ruff check .
           ruff format --check .

@@ -192,7 +192,7 @@ def test_retry_after_seconds_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_retry_after_http_date_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     """RFC 也允许日期格式；以前 float() 直接吃不下，会抛 ValueError 变成退出码 70。"""
-    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=3)
+    when = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3)
     slept: list[float] = []
     monkeypatch.setattr("time.sleep", slept.append)
     transport = FakeTransport(

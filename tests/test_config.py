@@ -217,7 +217,7 @@ def test_config_falls_back_to_the_vendored_parser_without_tomllib(
 
 def test_project_python_floor_matches_the_vendored_fallback() -> None:
     """`tomllib` 是唯一要 3.11 的东西，降版本的前提是它有兜底。"""
-    import tomllib
+    from toml_compat import tomllib
 
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))

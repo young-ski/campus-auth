@@ -47,12 +47,63 @@ def test_bat_sends_people_to_the_guide_without_python() -> None:
     assert "python.org/downloads" in text
 
 
+def test_bat_accepts_an_explicit_interpreter() -> None:
+    """查不到就让人自己指：install.cmd "C:\\...\\python.exe"。"""
+    text = BAT.read_text(encoding="ascii")
+    assert 'set "PYARG=%~1"' in text
+    assert "if defined PYARG" in text
+
+
+def test_bat_detection_covers_more_than_path() -> None:
+    """学生 1 的机器上 `python` 明明能跑，脚本却说没找到。
+
+    PATH 只是候选之一：注册表、py 启动器、以及 python.org / uv / conda / scoop
+    的默认目录都要扫，否则「装了但没加 PATH」和 uv 装的 3.12 都会漏。
+    """
+    text = BAT.read_text(encoding="ascii")
+    for needle in (
+        "reg query",
+        "py -3.12",
+        "Programs\\Python",
+        "uv\\python",
+        "anaconda3",
+        "scoop",
+    ):
+        assert needle in text, needle
+
+
+def test_bat_prints_a_pasteable_diagnostic_block() -> None:
+    """找不到时必须自证现场，否则只能靠来回问。"""
+    text = BAT.read_text(encoding="ascii")
+    assert "---- cut here ----" in text
+    assert "where python" in text
+    assert "py -0p" in text
+
+
+def test_bat_accepts_python_310() -> None:
+    text = BAT.read_text(encoding="ascii")
+    assert 'set "MINPY=3.10"' in text
+    assert "sys.version_info >= (3,10)" in text
+
+
+def test_bat_does_not_let_the_launcher_open_the_store() -> None:
+    text = BAT.read_text(encoding="ascii")
+    assert "PYLAUNCHER_ALLOW_INSTALL=0" in text
+
+
 def test_guide_covers_the_non_obvious_steps() -> None:
     text = (PACKAGING / "install-guide.txt").read_text(encoding="utf-8-sig")
     assert "热点" in text  # 认证前装不了东西
     assert "Add python.exe to PATH" in text
     assert "uninstall" in text
     assert "doctor" in text
+
+
+def test_guide_says_310_is_enough_and_how_to_point_at_python() -> None:
+    text = (PACKAGING / "install-guide.txt").read_text(encoding="utf-8-sig")
+    assert "3.10 或更新" in text
+    assert 'install.cmd "' in text
+    assert "where python" in text
 
 
 def test_disclaimer_names_the_private_channel() -> None:

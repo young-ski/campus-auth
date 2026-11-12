@@ -11,7 +11,10 @@ title campus-auth setup
 
 set "PYZ=%~dp0campus-auth.pyz"
 set "SUMS=%~dp0SHA256SUMS"
+set "MINPY=3.10"
 set "PY="
+set "PYARG=%~1"
+set "CAND="
 
 echo.
 echo   campus-auth setup
@@ -47,21 +50,98 @@ pause
 exit /b 0
 
 
+rem ------------------------------------------------------------
+rem  Find an interpreter. Order matters: the py launcher knows
+rem  every installed runtime even when PATH is bare, so it goes
+rem  first; then PATH; then the registry (python.org always
+rem  writes it); then the two default install directories.
+rem ------------------------------------------------------------
 :find_py
-rem Prefer the py launcher, then plain python; both must be 3.11+.
-where py >nul 2>nul
-if errorlevel 1 goto :try_python
-py -3 -c "import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)" >nul 2>nul
-if errorlevel 1 goto :try_python
-set "PY=py -3"
+rem Version floor kept in sync with pyproject requires-python.
+rem NOTE: no wrapping quotes around this value - the `>` inside must stay
+rem inside the -c quotes, or cmd treats it as a redirection.
+set PYCHECK=-c "import sys;raise SystemExit(0 if sys.version_info >= (3,10) else 1)"
+
+rem Never let the launcher pop the Store on an unknown version.
+set "PYLAUNCHER_ALLOW_INSTALL=0"
+
+rem 0) Explicit override: install.cmd "C:\path\to\python.exe"
+if defined PYARG (
+  set CAND="%PYARG%"
+  call :try
+  if defined PY goto :find_done
+)
+
+rem 1) py launcher: knows runtimes that are not on PATH.
+set "CAND=py -3.13" & call :try
+set "CAND=py -3.12" & call :try
+set "CAND=py -3.11" & call :try
+set "CAND=py -3.10" & call :try
+set "CAND=py -3"    & call :try
+
+rem 2) plain PATH lookup
+set "CAND=python"  & call :try
+set "CAND=python3" & call :try
+
+rem 3) where installers record things
+if defined PY goto :find_done
+call :scan_registry
+if defined PY goto :find_done
+call :scan_dirs
+:find_done
 exit /b 0
 
-:try_python
-where python >nul 2>nul
+:try
+if defined PY exit /b 0
+%CAND% %PYCHECK% >nul 2>nul
 if errorlevel 1 exit /b 0
-python -c "import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)" >nul 2>nul
-if errorlevel 1 exit /b 0
-set "PY=python"
+set "PY=%CAND%"
+exit /b 0
+
+:scan_registry
+rem python.org (and most installers) record every interpreter here.
+for /f "tokens=2,*" %%a in ('reg query "HKCU\Software\Python\PythonCore" /s /v ExecutablePath 2^>nul ^| findstr /i "ExecutablePath"') do (
+  set CAND="%%b"
+  call :try
+)
+if defined PY exit /b 0
+for /f "tokens=2,*" %%a in ('reg query "HKLM\Software\Python\PythonCore" /s /v ExecutablePath 2^>nul ^| findstr /i "ExecutablePath"') do (
+  set CAND="%%b"
+  call :try
+)
+exit /b 0
+
+:scan_dirs
+rem Per-user installs land under %LOCALAPPDATA%\Programs\Python,
+rem all-users installs under C:\Program Files - neither needs PATH.
+rem uv / conda / scoop matter too: their pythons are often on PATH only in
+rem one shell, and the py launcher cannot select them by version.
+for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+  set CAND="%%~fd\python.exe"
+  call :try
+)
+if defined PY exit /b 0
+for /d %%d in ("%ProgramFiles%\Python3*") do (
+  set CAND="%%~fd\python.exe"
+  call :try
+)
+if defined PY exit /b 0
+for /d %%d in ("%APPDATA%\uv\python\cpython-3*") do (
+  set CAND="%%~fd\python.exe"
+  call :try
+)
+if defined PY exit /b 0
+for /d %%d in ("%USERPROFILE%\anaconda3" "%USERPROFILE%\miniconda3" "%USERPROFILE%\miniforge3" "%USERPROFILE%\scoop\apps\python\current") do (
+  set CAND="%%~fd\python.exe"
+  call :try
+)
+if defined PY exit /b 0
+for %%d in ("%USERPROFILE%\.local\bin\python.exe") do (
+  if exist "%%~fd" (
+    set CAND="%%~fd"
+    call :try
+  )
+)
 exit /b 0
 
 
@@ -83,13 +163,30 @@ exit /b 1
 
 
 :no_python
-echo   [!] Python 3.11+ not found on this machine.
+echo   [!] No Python %MINPY%+ found on this machine.
 echo.
-echo       1. The page is opening: download Python, and TICK
-echo          "Add python.exe to PATH" during install.
-echo       2. Then double-click this file again.
+echo   What I tried: py -3.13 / -3.12 / -3.11 / -3.10 / -3, python, python3,
+echo                 the registry, and the usual install folders (python.org,
+echo                 uv, conda, scoop).
 echo.
-echo       (Chinese guide: install-guide is opening too.)
+echo   What is actually on this machine (paste this whole block back
+echo   if you think Python IS installed):
+echo.
+echo   ---- cut here ----
+where python 2>nul
+where py 2>nul
+python -V 2>nul
+py -0p 2>nul
+echo   ---- cut here ----
+echo.
+echo   1. The download page is opening: install Python %MINPY% or newer,
+echo      and TICK "Add python.exe to PATH" during install.
+echo   2. Then double-click this file again.
+echo.
+echo   Already have Python %MINPY%+ but this still says "not found"?
+echo   Point at it directly, e.g.:
+echo       install.cmd "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+echo.
 start "" notepad "%~dp0install-guide.txt"
 start "" https://www.python.org/downloads/
 pause

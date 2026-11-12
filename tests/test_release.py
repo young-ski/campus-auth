@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tomllib
 import zipfile
 from pathlib import Path
 
 import pytest
+from toml_compat import tomllib
 
 from campus_auth import __version__
 

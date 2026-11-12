@@ -29,7 +29,7 @@ IP 10.138.14.27  MAC AABBCCDDEEFF  账号 ,0,081456789@cmcc
 > **English** — A CLI for the Dr.COM/eportal campus portal of HUUC (Henan University of Urban
 > Construction), Chinese campus network. One command to log in, auto-reconnect on drops, `--json`
 > everywhere, exit codes are a contract, passwords go to the OS keyring. Windows / macOS / Linux,
-> Python ≥ 3.11, no runtime dependencies. Other Dr.COM campuses can work through the `generic`
+> Python ≥ 3.10, no runtime dependencies. Other Dr.COM campuses can work through the `generic`
 > adapter ([`CONTRIBUTING.md`](https://github.com/young-ski/campus-auth/blob/main/CONTRIBUTING.md)); covered schools live in
 > [`docs/schools.md`](https://github.com/young-ski/campus-auth/blob/main/docs/schools.md).
 
@@ -68,7 +68,7 @@ pip install campus-auth
 pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
 
-默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
+默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.10。
 没有 pip 的机器用单文件：从 Releases 下 `campus-auth.pyz`，`python campus-auth.pyz status`。
 同一个 Release 里带 `SHA256SUMS`，`sha256sum -c SHA256SUMS` 能先核对再跑。
 
@@ -152,7 +152,7 @@ pip install campus-auth
 pip install "campus-auth[keyring]"   # 可选：把密码交给系统钥匙串
 ```
 
-默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.11。
+默认无第三方运行时依赖，`keyring` 是唯一的可选 extra。Python ≥ 3.10。
 想跟未发布的主干，也可以装 git：
 
 ```bash

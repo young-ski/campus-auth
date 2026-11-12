@@ -36,12 +36,21 @@ campus-auth 安装说明
 装完把解压出来的文件夹删掉也不影响使用。
 
 
-三、没有 Python 怎么办
+三、没有 Python 或版本太低怎么办
 --------------------------------------------------------------------
-install.cmd 会告诉你，并自动打开下载页。装的时候**一定要勾上
-"Add python.exe to PATH"**，否则装完还是找不到。
+需要 **3.10 或更新**（3.12 / 3.13 / 3.14 都行，3.9 不行）。
 
-需要 3.11 或更新的版本。
+install.cmd 会自己找：py 启动器、PATH、注册表、以及 python.org / uv / conda / scoop
+的默认安装位置 —— 所以「装了但没加 PATH」也能找到。
+
+如果它仍然说没找到，窗口里会打出「What is actually on this machine」一段，
+把那段原样发我；或者直接告诉它 Python 在哪：
+
+    install.cmd "C:\Users\你\AppData\Local\Programs\Python\Python312\python.exe"
+
+（路径换成你自己的，可以在命令行里用 `where python` 查。）
+
+要自己装的话：装的时候**一定要勾上 "Add python.exe to PATH"**，否则下次还得手动指。
 
 
 四、日常怎么用

@@ -2,6 +2,22 @@
 
 只记对本仓库使用者有影响的东西。版本号跟 `pyproject.toml` 走，日期在打 tag 时补。
 
+## 1.7.5（2026-11-12）
+
+### 修复
+
+- **装了 Python 3.12，`install.cmd` 仍说找不到**：旧脚本只试 `py -3` 和 PATH 上的 `python`。
+  现在按顺序试 `py -3.13`…`-3.10`、PATH、注册表（`PythonCore` 的 `ExecutablePath`）、
+  以及 python.org / uv / conda / scoop 的默认目录——「装了但没加 PATH」和 uv 装出来的
+  3.12 都能找到。仍找不到时不再只给一句「没装」，而是打印 `where python` / `py -0p` 的现场，
+  并支持显式指定：`install.cmd "C:\...\python.exe"`
+- **Python 3.10 也能用了**：代码里唯一的 3.11 依赖是 `tomllib`，内置一份 `tomli`（MIT，
+  保留上游 LICENSE）给 3.10 兜底；`requires-python` 降到 `>=3.10`，CI 矩阵补 3.10
+
+### 文档
+
+- 安装说明写清「3.10 或更新」、查找顺序，以及找不到时怎么把现场发出来
+
 ## 1.7.4（2026-11-09）
 
 ### 新增

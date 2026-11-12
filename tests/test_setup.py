@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
 import pytest
 from fake_transport import patch_send
+from toml_compat import tomllib
 
 from campus_auth import cli, net
 from campus_auth.commands import setup

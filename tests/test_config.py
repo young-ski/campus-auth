@@ -179,3 +179,49 @@ def test_env_still_beats_keyring_with_override(
     monkeypatch.setattr(credentials, "get", lambda *_a: "从钥匙串")
     monkeypatch.setenv(config_mod.ENV_PASSWORD, "从环境")
     assert load(write(isolated, 'adapter = "huuc"\n'), {"account": "0814"}).password == "从环境"
+
+
+def test_config_falls_back_to_the_vendored_parser_without_tomllib(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """3.10 没有 tomllib：内置的那份要顶上来，解析结果和标准库一致。"""
+    import builtins
+    import importlib
+    import sys
+
+    real_import = builtins.__import__
+
+    def no_tomllib(name: str, *args, **kwargs):
+        if name == "tomllib":
+            raise ModuleNotFoundError("No module named 'tomllib'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_tomllib)
+    monkeypatch.delitem(sys.modules, "campus_auth.config", raising=False)
+    config_module = importlib.import_module("campus_auth.config")
+    try:
+        assert config_module.tomllib.__name__ == "campus_auth._vendor.tomli"
+        path = tmp_path / "c.toml"
+        path.write_text(
+            'adapter = "huuc"\naccount = "0814"\npassword = "a\\"b"\nretries = 3\n',
+            encoding="utf-8",
+        )
+        values = config_module.load_file(path)
+        assert values["account"] == "0814"
+        assert values["password"] == 'a"b'
+        assert values["retries"] == 3
+    finally:
+        monkeypatch.undo()
+        sys.modules.pop("campus_auth.config", None)
+
+
+def test_project_python_floor_matches_the_vendored_fallback() -> None:
+    """`tomllib` 是唯一要 3.11 的东西，降版本的前提是它有兜底。"""
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    assert declared["project"]["requires-python"] == ">=3.10"
+    assert (
+        Path(__file__).resolve().parents[1] / "src/campus_auth/_vendor/tomli/__init__.py"
+    ).is_file()

@@ -17,10 +17,14 @@ from __future__ import annotations
 
 import os
 import sys
-import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+try:  # 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - 3.10 上走这条
+    from ._vendor import tomli as tomllib  # type: ignore[no-redef]
 
 from . import credentials
 from .errors import ConfigError

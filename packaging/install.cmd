@@ -57,11 +57,6 @@ rem  first; then PATH; then the registry (python.org always
 rem  writes it); then the two default install directories.
 rem ------------------------------------------------------------
 :find_py
-rem Version floor kept in sync with pyproject requires-python.
-rem NOTE: no wrapping quotes around this value - the `>` inside must stay
-rem inside the -c quotes, or cmd treats it as a redirection.
-set PYCHECK=-c "import sys;raise SystemExit(0 if sys.version_info >= (3,10) else 1)"
-
 rem Never let the launcher pop the Store on an unknown version.
 set "PYLAUNCHER_ALLOW_INSTALL=0"
 
@@ -92,8 +87,14 @@ call :scan_dirs
 exit /b 0
 
 :try
+rem Two things here are load-bearing:
+rem   * the -c script is written inline (not via a variable): a variable that
+rem     fails to expand turns this into a bare `py -3.13`, i.e. an interactive
+rem     REPL that waits forever - exactly the 10-minute hang we saw.
+rem   * `<nul` means even a bare interpreter sees EOF and exits instead of
+rem     waiting for input.
 if defined PY exit /b 0
-%CAND% %PYCHECK% >nul 2>nul
+%CAND% -c "import sys;raise SystemExit(0 if sys.version_info >= (3,10) else 1)" <nul >nul 2>nul
 if errorlevel 1 exit /b 0
 set "PY=%CAND%"
 exit /b 0

@@ -135,7 +135,11 @@ def cmd_install(args: argparse.Namespace) -> int:
         _say("! 没找到配置文件：自启要一个真实路径，先 `campus-auth init` 或 --config 指一个")
         return EXIT_CONFIG
 
-    service = installer.service_for(path)
+    # 从 pyz 跑的话，先把文件复制到配置目录：自启不能指着解压出来的那份
+    pyz = installer.running_pyz()
+    if pyz is not None and not args.dry_run:
+        pyz = installer.adopt_pyz(pyz)
+    service = installer.service_for(path, pyz=pyz)
     _say(f"要装的是: {service.kind} → {service.path}")
     if not config.password:
         _say("! 没读到密码：自启不继承当前 shell 的环境变量，先 `campus-auth password` 或写进配置")
@@ -149,7 +153,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             _say(f"$ {' '.join(argv)}")
         return EXIT_OK
 
-    installer.check_python(sys.executable)
+    installer.check_entry(sys.executable, pyz)
     installer.install(service)
     _say("已安装。")
     for note in service.notes:
@@ -158,15 +162,18 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
-    service = installer.service_for(find_config_file(args.config))
+    service = installer.service_for(find_config_file(args.config), pyz=installer.running_pyz())
     if args.dry_run:
         _say(f"要卸的是: {service.kind} → {service.path}")
         for argv in service.remove:
             _say(f"$ {' '.join(argv)}")
         return EXIT_OK
 
-    installer.uninstall(service)
+    failures = installer.uninstall(service)
+    installer.remove_adopted_pyz()
     _say(f"已卸载（{service.path}）。")
+    for failure in failures:
+        _say(f"! 有一条没跑成（可能本来就没装）：{failure}")
     return EXIT_OK
 
 

@@ -1,4 +1,4 @@
-"""`setup` 向导：只测它自己的流程，门户用假 transport。"""
+"""`setup` 向导：学号与密码都在窗口里问，门户用假 transport。"""
 
 from __future__ import annotations
 
@@ -21,16 +21,14 @@ class TtyStdin:
     def isatty(self) -> bool:
         return True
 
-    def readline(self) -> str:  # pragma: no cover  - 只在 isatty 为假时用
+    def readline(self) -> str:  # pragma: no cover - 只在 isatty 为假时用
         return ""
 
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """把默认配置路径挪进 tmp，并让门户永远"不在线但可登录"。"""
     cfg = tmp_path / "appdata" / "campus-auth" / "config.toml"
     monkeypatch.setattr(setup, "default_config_path", lambda: cfg)
-    monkeypatch.setattr(setup, "_open_in_editor", lambda _path: True)
     monkeypatch.setattr(setup.sys, "stdin", TtyStdin())
     monkeypatch.setattr(net, "local_ip", lambda host, port=80, timeout=5: IP)
     monkeypatch.setattr(net, "local_mac", lambda ip=None: "aabbccddeeff")
@@ -56,81 +54,107 @@ def portal(monkeypatch: pytest.MonkeyPatch) -> dict:
     return state
 
 
-def fill_account(cfg: Path, account: str) -> None:
-    """模拟同学在记事本里改完配置。"""
-    text = cfg.read_text(encoding="utf-8")
-    cfg.write_text(text.replace('account = ""', f'account = "{account}"'), encoding="utf-8")
-
-
-def drive(
-    monkeypatch: pytest.MonkeyPatch,
-    cfg: Path,
-    *after: str,
-    account: str | None = "0814",
-) -> None:
-    """按回车时顺手把学号填好，之后依次回答 `after`。"""
-    pending = list(after)
+def drive(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]:
+    """按顺序喂 input()，返回被问过的提示语。"""
+    queue = list(answers)
+    prompts: list[str] = []
 
     def fake_input(prompt: str = "") -> str:
-        if account is not None and "回车" in prompt:
-            fill_account(cfg, account)
-            return ""
-        return pending.pop(0) if pending else ""
+        prompts.append(prompt)
+        return queue.pop(0) if queue else ""
 
     monkeypatch.setattr("builtins.input", fake_input)
+    return prompts
 
 
-def test_setup_writes_config_and_needs_force_to_overwrite(
+def config_of(path: Path) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+# ---------- 学号 ----------
+
+
+def test_setup_asks_in_the_console_and_writes_the_account(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """不再打开记事本、不再等用户保存：窗口里直接问。"""
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *a: True)
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw123")
+    portal(monkeypatch)
+    prompts = drive(monkeypatch, "0814", "n")
+    assert cli.main(["setup"]) == 0
+    assert config_of(env)["account"] == "0814"
+    assert any("学号" in p for p in prompts)
+
+
+def test_setup_strips_an_accidental_suffix(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """把 @cmcc 一起抄进来很常见：取前面的数字，不教训人。"""
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *a: True)
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
+    portal(monkeypatch)
+    drive(monkeypatch, "0814@cmcc", "n")
+    assert cli.main(["setup"]) == 0
+    assert config_of(env)["account"] == "0814"
+
+
+def test_setup_reasks_once_when_the_account_is_not_numeric(
     env: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    env.parent.mkdir(parents=True, exist_ok=True)
-    env.write_text('adapter = "huuc"\n', encoding="utf-8")
-    assert cli.main(["setup"]) == 2
-    assert "--force" in capsys.readouterr().out
+    from campus_auth import credentials
 
-
-def test_setup_requires_a_filled_account(
-    env: Path, monkeypatch: pytest.MonkeyPatch, capsys
-) -> None:
-    drive(monkeypatch, env, account=None)
-    assert cli.main(["setup"]) == 2
+    monkeypatch.setattr(credentials, "set", lambda *a: True)
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
+    portal(monkeypatch)
+    drive(monkeypatch, "abc", "0814", "n")
+    assert cli.main(["setup"]) == 0
     out = capsys.readouterr().out
-    assert "还是空的" in out
-    # 模板必须已经落盘，别让同学白填一遍
-    assert env.is_file()
+    assert "只填数字" in out
+    assert config_of(env)["account"] == "0814"
 
 
-def test_setup_rejects_non_numeric_account(
+def test_setup_gives_up_after_three_bad_accounts(
     env: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    drive(monkeypatch, env, account="0814@cmcc")
+    drive(monkeypatch, "abc", "def", "ghi")
     assert cli.main(["setup"]) == 2
-    assert "只填数字" in capsys.readouterr().out
+    assert "三次" in capsys.readouterr().out
+    assert not env.exists()
 
 
-def test_setup_names_the_suffix_mistake(env: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    """`0814@cmcc` 是最常见的手填错误，要当场说清后缀归 -w 管。"""
-    drive(monkeypatch, env, account="0814@cmcc")
-    assert cli.main(["setup"]) == 2
-    assert "别带 @cmcc" in capsys.readouterr().out
-
-
-def test_setup_stores_password_in_keyring(
+def test_setup_does_not_mention_the_at_suffix_in_the_prompt(
     env: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
+    """提示语里别再教「不要带 @」——那是加分号，不是入门信息。"""
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *a: True)
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
+    portal(monkeypatch)
+    drive(monkeypatch, "0814", "n")
+    cli.main(["setup"])
+    out = capsys.readouterr().out
+    assert "@ 后缀" not in out
+    assert "@cmcc" not in out
+
+
+# ---------- 密码 ----------
+
+
+def test_setup_stores_password_in_keyring(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from campus_auth import credentials
 
     saved: list[tuple[str, str, str]] = []
     monkeypatch.setattr(credentials, "set", lambda a, acc, p: saved.append((a, acc, p)) or True)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw123")
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
-    code = cli.main(["setup"])
-    out = capsys.readouterr().out
-    assert code == 0, out[-800:]
+    drive(monkeypatch, "0814", "n")
+    assert cli.main(["setup"]) == 0
     assert saved == [("huuc", "0814", "pw123")]
-    # 进了钥匙串就不该在配置里留明文
-    assert tomllib.loads(env.read_text(encoding="utf-8"))["password"] == ""
+    assert config_of(env)["password"] == ""
 
 
 def test_setup_falls_back_to_config_when_keyring_is_missing(
@@ -141,9 +165,9 @@ def test_setup_falls_back_to_config_when_keyring_is_missing(
     monkeypatch.setattr(credentials, "set", lambda *a: False)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw123")
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     assert cli.main(["setup"]) == 0
-    config = tomllib.loads(env.read_text(encoding="utf-8"))
+    config = config_of(env)
     assert config["password"] == "pw123"
     assert config["account"] == "0814"
 
@@ -154,9 +178,25 @@ def test_setup_escapes_the_password_for_toml(env: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(credentials, "set", lambda *a: False)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: 'a"b\\c')
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     assert cli.main(["setup"]) == 0
-    assert tomllib.loads(env.read_text(encoding="utf-8"))["password"] == 'a"b\\c'
+    assert config_of(env)["password"] == 'a"b\\c'
+
+
+def test_setup_warns_about_non_ascii_password(
+    env: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    from campus_auth import credentials
+
+    monkeypatch.setattr(credentials, "set", lambda *a: True)
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "密码")
+    portal(monkeypatch)
+    drive(monkeypatch, "0814", "n")
+    cli.main(["setup"])
+    assert "非 ASCII" in capsys.readouterr().out
+
+
+# ---------- 验证与自启 ----------
 
 
 def test_setup_logs_in_and_confirms(env: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
@@ -165,7 +205,7 @@ def test_setup_logs_in_and_confirms(env: Path, monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(credentials, "set", lambda *a: True)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
     state = portal(monkeypatch)
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     assert cli.main(["setup"]) == 0
     assert state["logins"] == 1
     assert "登录成功" in capsys.readouterr().out
@@ -180,27 +220,32 @@ def test_setup_skips_login_when_already_online(
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
     state = portal(monkeypatch)
     state["online"] = True
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     assert cli.main(["setup"]) == 0
     assert state["logins"] == 0
     assert "已经在线" in capsys.readouterr().out
 
 
-def test_setup_installs_autostart_on_yes(
-    env: Path, monkeypatch: pytest.MonkeyPatch, capsys
+def test_setup_autostart_uses_the_pyz_when_running_from_one(
+    env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """从压缩包跑时 `python -m campus_auth` 根本不存在，自启必须指向 pyz 文件。"""
     from campus_auth import credentials
 
+    pyz = tmp_path / "campus-auth.pyz"
+    pyz.write_bytes(b"PK")
     monkeypatch.setattr(credentials, "set", lambda *a: True)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
+    monkeypatch.setattr(setup, "running_pyz", lambda: pyz)
     portal(monkeypatch)
-    installed: list[object] = []
-    monkeypatch.setattr(setup, "install", lambda service: installed.append(service))
-    monkeypatch.setattr(setup, "check_python", lambda _py: None)
-    drive(monkeypatch, env, "y")
+    seen: list[object] = []
+    monkeypatch.setattr(setup, "install", lambda service: seen.append(service))
+    monkeypatch.setattr(setup, "check_entry", lambda *a, **k: None)
+    drive(monkeypatch, "0814", "y")
     assert cli.main(["setup"]) == 0
-    assert len(installed) == 1
-    assert "已装成登录自启" in capsys.readouterr().out
+    service = seen[0]
+    assert "campus_auth" not in service.content.replace("campus-auth", "")
+    assert "campus-auth.pyz" in service.content
 
 
 def test_setup_keeps_going_when_autostart_fails(
@@ -217,23 +262,35 @@ def test_setup_keeps_going_when_autostart_fails(
         raise ConfigError("systemctl 不在")
 
     monkeypatch.setattr(setup, "install", boom)
-    monkeypatch.setattr(setup, "check_python", lambda _py: None)
-    drive(monkeypatch, env, "y")
+    monkeypatch.setattr(setup, "check_entry", lambda *a, **k: None)
+    drive(monkeypatch, "0814", "y")
     assert cli.main(["setup"]) == 0
     assert "自启没装成" in capsys.readouterr().out
 
 
-def test_setup_warns_about_non_ascii_password(
+def test_setup_requires_force_to_overwrite(
+    env: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    env.parent.mkdir(parents=True, exist_ok=True)
+    env.write_text('adapter = "huuc"\naccount = "0814"\n', encoding="utf-8")
+    assert cli.main(["setup"]) == 2
+    assert "--force" in capsys.readouterr().out
+
+
+def test_setup_force_reuses_the_existing_account(
     env: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
     from campus_auth import credentials
 
+    env.parent.mkdir(parents=True, exist_ok=True)
+    env.write_text('adapter = "huuc"\naccount = "0814"\npassword = ""\n', encoding="utf-8")
     monkeypatch.setattr(credentials, "set", lambda *a: True)
-    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "密码")
+    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
-    cli.main(["setup"])
-    assert "非 ASCII" in capsys.readouterr().out
+    drive(monkeypatch, "n")
+    assert cli.main(["setup", "--force"]) == 0
+    assert "沿用上次" in capsys.readouterr().out
+    assert config_of(env)["account"] == "0814"
 
 
 def test_setup_ends_with_doctor_hint(env: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
@@ -242,28 +299,11 @@ def test_setup_ends_with_doctor_hint(env: Path, monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr(credentials, "set", lambda *a: True)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     cli.main(["setup"])
     out = capsys.readouterr().out
     assert "campus-auth doctor" in out
     assert "密码不会出现" in out
-
-
-def test_setup_force_reuses_the_existing_account(
-    env: Path, monkeypatch: pytest.MonkeyPatch, capsys
-) -> None:
-    """重跑别让人再填一遍学号，也别为了它停在那里等回车。"""
-    from campus_auth import credentials
-
-    env.parent.mkdir(parents=True, exist_ok=True)
-    env.write_text('adapter = "huuc"\naccount = "0814"\npassword = ""\n', encoding="utf-8")
-    monkeypatch.setattr(credentials, "set", lambda *a: True)
-    monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
-    portal(monkeypatch)
-    monkeypatch.setattr("builtins.input", lambda _p="": "n")
-    assert cli.main(["setup", "--force"]) == 0
-    text = capsys.readouterr().out
-    assert "沿用原来的学号 0814" in text
 
 
 def test_setup_config_is_owner_only_on_posix(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,6 +317,6 @@ def test_setup_config_is_owner_only_on_posix(env: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(credentials, "set", lambda *a: True)
     monkeypatch.setattr(setup.getpass, "getpass", lambda _p: "pw")
     portal(monkeypatch)
-    drive(monkeypatch, env, "n")
+    drive(monkeypatch, "0814", "n")
     cli.main(["setup"])
     assert stat.S_IMODE(env.stat().st_mode) == 0o600

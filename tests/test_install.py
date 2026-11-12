@@ -148,3 +148,71 @@ def test_launchd_plist_is_valid_xml() -> None:
     service = install.service_for(HOSTILE, platform="darwin")
     ET.fromstring(service.content)
     assert "a&amp;b" in service.content
+
+
+def test_pyz_runs_the_file_instead_of_the_module() -> None:
+    """从压缩包跑时 `python -m campus_auth` 不存在，自启必须指 pyz。"""
+    from pathlib import Path
+
+    from campus_auth.install import service_for
+
+    pyz = Path("C:/x/campus-auth.pyz")
+    win = service_for(Path("C:/x/c.toml"), python="python.exe", platform="win32", pyz=pyz)
+    assert "campus-auth.pyz" in win.content
+    assert "-m" not in win.content
+
+
+def test_module_mode_is_still_the_default() -> None:
+    from pathlib import Path
+
+    from campus_auth.install import service_for
+
+    win = service_for(Path("C:/x/c.toml"), python="python.exe", platform="win32")
+    assert "-m" in win.content
+    assert "campus_auth" in win.content
+
+
+def test_adopt_pyz_copies_next_to_the_config(tmp_path, monkeypatch) -> None:
+    """删掉解压目录不该让自启失效，所以副本要落到配置目录。"""
+    from campus_auth import install as installer
+
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setattr(installer.sys, "platform", "win32")
+    source = tmp_path / "download" / "campus-auth.pyz"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"PK\x03\x04")
+
+    adopted = installer.adopt_pyz(source, platform="win32")
+    assert adopted != source
+    assert adopted.read_bytes() == b"PK\x03\x04"
+    assert adopted.parent.name == "campus-auth"
+
+
+def test_adopt_pyz_is_a_noop_when_already_in_place(tmp_path, monkeypatch) -> None:
+    from campus_auth import install as installer
+
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    target = tmp_path / "appdata" / "campus-auth" / "campus-auth.pyz"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"PK")
+    assert installer.adopt_pyz(target, platform="win32") == target
+
+
+def test_uninstall_tolerates_an_already_removed_entry(tmp_path) -> None:
+    """点两次卸载是常态：已经不在的东西不该让命令失败。"""
+    from campus_auth.errors import ConfigError
+    from campus_auth.install import Service, uninstall
+
+    def missing(_argv):
+        raise ConfigError("ERROR: The system was unable to find the specified registry key")
+
+    service = Service(
+        kind="run-key",
+        path=tmp_path / "gone.cmd",
+        log_path=tmp_path / "w.log",
+        content="x",
+        remove=[["reg", "delete", "x"]],
+    )
+    failures = uninstall(service, run=missing)
+    assert len(failures) == 1
+    assert "unable to find" in failures[0]

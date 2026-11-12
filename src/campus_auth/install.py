@@ -13,7 +13,9 @@ r"""把 `watch` 装成登录自启的服务，以及卸掉它。
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -70,13 +72,29 @@ def _state_home(platform: str) -> Path:
     return Path.home() / ".local" / "state" / "campus-auth"
 
 
-def _watch_command(python: str, config_path: Path, platform: str) -> list[str]:
+def running_pyz() -> Path | None:
+    """如果当前进程就是单文件 pyz，返回它的路径。
+
+    这种运行方式下 `python -m campus_auth` 是**不存在**的（包没装进 site-packages），
+    自启必须改成 `python <这个文件> watch`，否则装完一跑就 import 失败。
+    """
+    if not sys.argv or not sys.argv[0]:
+        return None
+    candidate = Path(sys.argv[0])
+    if candidate.suffix.lower() == ".pyz" and candidate.is_file():
+        return candidate.resolve()
+    return None
+
+
+def _watch_command(
+    python: str, config_path: Path, platform: str, pyz: Path | None = None
+) -> list[str]:
     # -u：输出进日志时要立刻落盘；--log 自己按大小轮转，别靠 shell 的 >>
+    entry = [str(pyz)] if pyz is not None else ["-m", "campus_auth"]
     return [
         python,
         "-u",
-        "-m",
-        "campus_auth",
+        *entry,
         "watch",
         "--config",
         str(config_path),
@@ -118,12 +136,13 @@ def service_for(
     *,
     python: str | None = None,
     platform: str | None = None,
+    pyz: Path | None = None,
 ) -> Service:
     """按平台拼出要装的东西；不认识的平台直接拒绝，别装一半。"""
     platform = platform or sys.platform
     python = python or sys.executable
     config_path = config_path or _config_home(platform) / "campus-auth.toml"
-    command = _watch_command(python, config_path, platform)
+    command = _watch_command(python, config_path, platform, pyz)
 
     if platform == "win32":
         return _windows(command, platform)
@@ -260,6 +279,30 @@ def install(service: Service, *, dry_run: bool = False, run: Runner = _default_r
         run(argv)
 
 
+def adopt_pyz(pyz: Path, *, platform: str | None = None) -> Path:
+    """把正在跑的 pyz 复制到配置目录，自启指这份副本。
+
+    直接指解压出来的那份，同学一删文件夹自启就断；配置目录跟着用户走。
+    """
+    platform = platform or sys.platform
+    dest = _config_home(platform) / "campus-auth.pyz"
+    if pyz.resolve() == dest.resolve():
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(pyz, dest)
+    return dest
+
+
+def remove_adopted_pyz(*, platform: str | None = None) -> None:
+    """卸载时一并删掉那份副本；不在也不算错。
+
+    正被 watch 占用时删不掉 —— 那不是错误，提示一句就够，别抛 traceback。
+    """
+    target = _config_home(platform or sys.platform) / "campus-auth.pyz"
+    with contextlib.suppress(OSError):
+        target.unlink(missing_ok=True)
+
+
 def check_python(python: str, run: Runner = _default_runner) -> None:
     """装之前先确认这个解释器能 import 到 campus_auth。
 
@@ -273,13 +316,51 @@ def check_python(python: str, run: Runner = _default_runner) -> None:
         ) from exc
 
 
-def uninstall(service: Service, *, dry_run: bool = False, run: Runner = _default_runner) -> None:
-    """先停后删；文件不在也不算错。"""
-    if dry_run:
+def check_entry(python: str, pyz: Path | None = None, run: Runner = _default_runner) -> None:
+    """装自启前的自检：pyz 就直接跑那个文件，别去 import 根本没装的包。
+
+    从压缩包跑的时候 `python -m campus_auth` 必然失败（包不在 site-packages），
+    以前会让人「先 pip install .」，而认证前根本连不上网。
+    """
+    if pyz is None:
+        check_python(python, run)
         return
+    try:
+        run([python, str(pyz), "--version"])
+    except ConfigError as exc:
+        raise ConfigError(f"{python} 跑不了 {pyz}：{exc}") from exc
+
+
+def uninstall(
+    service: Service, *, dry_run: bool = False, run: Runner = _default_runner
+) -> list[str]:
+    """先停后删；本来就没装也算卸载成功。
+
+    返回没能执行成功的命令说明（已经不在的东西不该让它退非零 —— 同学点两次卸载
+    是常态）。
+    """
+    if dry_run:
+        return []
+    failures: list[str] = []
     for argv in service.remove:
-        run(argv)
-    service.path.unlink(missing_ok=True)
+        try:
+            run(argv)
+        except ConfigError as exc:
+            failures.append(str(exc))
+    with contextlib.suppress(OSError):
+        # 被占用（watch 还没退）时别抛 traceback，删得掉就删
+        service.path.unlink(missing_ok=True)
+    return failures
 
 
-__all__ = ["Service", "check_python", "install", "service_for", "uninstall"]
+__all__ = [
+    "Service",
+    "adopt_pyz",
+    "check_entry",
+    "check_python",
+    "install",
+    "remove_adopted_pyz",
+    "running_pyz",
+    "service_for",
+    "uninstall",
+]

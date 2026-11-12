@@ -428,7 +428,7 @@ def test_install_warns_when_password_comes_from_env(
 ) -> None:
     """自启不继承 shell 环境变量：密码只在 env 里时，装完 watch 必失败。"""
     monkeypatch.setenv("CAMPUS_AUTH_PASSWORD", "fromenv")
-    monkeypatch.setattr("campus_auth.install.service_for", lambda path: _fake_service())
+    monkeypatch.setattr("campus_auth.install.service_for", lambda path, **_kw: _fake_service())
     assert run(["install", "--dry-run"]) == 0
     assert "环境变量" in capsys.readouterr().out
 

@@ -54,6 +54,14 @@ def test_bat_accepts_an_explicit_interpreter() -> None:
     assert "if defined PYARG" in text
 
 
+def test_bat_never_leaves_a_bare_interpreter_running() -> None:
+    """同学的机器上探测卡死 10 分钟：`-c` 的参数一旦没拼上，`py -3.13` 就进 REPL。"""
+    text = BAT.read_text(encoding="ascii")
+    assert "<nul" in text
+    assert "set PYCHECK" not in text  # 别再靠变量拼 -c
+    assert "sys.version_info >= (3,10)" in text
+
+
 def test_bat_detection_covers_more_than_path() -> None:
     """学生 1 的机器上 `python` 明明能跑，脚本却说没找到。
 
@@ -150,6 +158,21 @@ def test_bundle_checksum_matches_the_pyz(tmp_path: Path) -> None:
 @pytest.mark.parametrize("name", ["install.cmd", "install-guide.txt", "disclaimer.txt"])
 def test_packaging_files_are_not_empty(name: str) -> None:
     assert (PACKAGING / name).stat().st_size > 200
+
+
+def test_guide_explains_the_smart_app_control_block() -> None:
+    """Win11 开着智能应用控制时，下载来的 .cmd 会被直接拦下 —— 这不是文件坏了。"""
+    text = (PACKAGING / "install-guide.txt").read_text(encoding="utf-8-sig")
+    assert "智能应用控制" in text
+    assert "解除锁定" in text
+    assert "Unblock-File" in text
+
+
+def test_guide_says_the_account_is_typed_in_the_window() -> None:
+    """别再让人去记事本里改配置。"""
+    text = (PACKAGING / "install-guide.txt").read_text(encoding="utf-8-sig")
+    assert "问你要学号" in text
+    assert "打开配置文件让你填" not in text
 
 
 def test_bundle_txt_files_carry_a_bom(tmp_path: Path) -> None:

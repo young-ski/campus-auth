@@ -15,10 +15,15 @@ import re
 import sys
 from pathlib import Path
 
-import tomllib
+try:  # 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - 工具也要能在 3.10 上跑
+    tomllib = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "src" / "campus_auth" / "__init__.py"
+# pyproject 的版本只有这一行，别为了它把整个解析器搬进 tools
+DECLARED = re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE)
 
 
 def _force_utf8() -> None:
@@ -28,10 +33,20 @@ def _force_utf8() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def declared_version() -> str:
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    if tomllib is not None:
+        with (ROOT / "pyproject.toml").open("rb") as handle:
+            return str(tomllib.load(handle)["project"]["version"])
+    match = DECLARED.search(text)
+    if match is None:
+        raise SystemExit("读不到 pyproject.toml 里的 version")
+    return match.group(1)
+
+
 def main(argv: list[str]) -> int:
     _force_utf8()
-    with (ROOT / "pyproject.toml").open("rb") as handle:
-        declared = str(tomllib.load(handle)["project"]["version"])
+    declared = declared_version()
     match = re.search(r'__version__ = "([^"]+)"', INIT.read_text(encoding="utf-8"))
     if match is None:
         print(f"读不到 {INIT} 里的 __version__", file=sys.stderr)

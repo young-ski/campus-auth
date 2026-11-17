@@ -67,6 +67,23 @@
       },
       "additionalProperties": true
     },
+    "whoami": {
+      "type": "object",
+      "required": [
+        "schema", "ok", "found", "ip", "mac", "account", "accounts", "matches_config"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "type": "boolean" },
+        "found": { "type": "boolean" },
+        "ip": { "type": "string" },
+        "mac": { "type": "string" },
+        "account": { "type": "string" },
+        "accounts": { "type": "array", "items": { "type": "string" } },
+        "matches_config": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
     "login": {
       "type": "object",
       "required": ["schema", "ok", "result", "msg", "ret_code", "hint", "ip"],
@@ -142,6 +159,7 @@
   "anyOf": [
     { "$ref": "#/definitions/probe" },
     { "$ref": "#/definitions/status" },
+    { "$ref": "#/definitions/whoami" },
     { "$ref": "#/definitions/login" },
     { "$ref": "#/definitions/action" },
     { "$ref": "#/definitions/check" },

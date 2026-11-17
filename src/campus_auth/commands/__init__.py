@@ -10,7 +10,7 @@ import getpass  # noqa: F401  测试会 patch commands.getpass
 from ._common import _config, _dump, _err, _prepare, _say  # noqa: F401
 from .account import cmd_password
 from .admin import cmd_adapters, cmd_doctor, cmd_init, cmd_install, cmd_uninstall, cmd_urls
-from .auth import cmd_check, cmd_login, cmd_logout, cmd_status, cmd_unbind
+from .auth import cmd_check, cmd_login, cmd_logout, cmd_status, cmd_unbind, cmd_whoami
 from .new_adapter import cmd_new_adapter
 from .scan import cmd_probe
 from .setup import cmd_setup
@@ -33,4 +33,5 @@ __all__ = [
     "cmd_uninstall",
     "cmd_urls",
     "cmd_watch",
+    "cmd_whoami",
 ]

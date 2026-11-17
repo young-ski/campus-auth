@@ -74,11 +74,11 @@ class Config:
     probe_host: str = "www.baidu.com"
     mask_urls: bool = True
 
-    def validate(self, need_password: bool = True) -> None:
+    def validate(self, need_password: bool = True, need_account: bool = True) -> None:
         missing = []
         if not self.adapter:
             missing.append("adapter")
-        if not self.account:
+        if need_account and not self.account:
             missing.append("account")
         if need_password and not self.password:
             missing.append("password")

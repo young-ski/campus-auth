@@ -95,6 +95,13 @@ def test_status_payload(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -
     check_payloads([only(capsys.readouterr().out)])
 
 
+def test_whoami_payload(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    body = f'cb({{"list":[{{"online_ip":"{IP}","user_account":"081456789"}}]}})'
+    patch_send(monkeypatch, lambda _url, _data: (200, body))
+    run(["whoami", "--json"])
+    check_payloads([only(capsys.readouterr().out)])
+
+
 def test_login_payload(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     state = {"online": False}
 
@@ -180,7 +187,7 @@ def test_error_payload(
 
 
 def test_doc_mentions_every_json_command() -> None:
-    for command in ("probe", "status", "login", "logout", "unbind", "watch", "check"):
+    for command in ("probe", "status", "whoami", "login", "logout", "unbind", "watch", "check"):
         assert f"## `{command} --json" in DOC or f"`{command} --json`" in DOC, command
 
 

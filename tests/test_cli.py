@@ -609,6 +609,108 @@ def test_login_is_not_skipped_when_ip_has_a_foreign_session(
     assert state["logins"] == 1
 
 
+# ---------- whoami ----------
+
+
+def _session(account: str, *, ip: str = IP, mac: str | None = None) -> str:
+    row = {"online_ip": ip, "user_account": account}
+    if mac:
+        row["online_mac"] = mac
+    return f'cb({{"list":[{json.dumps(row)}]}})'
+
+
+def test_whoami_names_the_account_on_this_ip(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("081456789")))
+    assert run(["whoami"]) == 0
+    out = capsys.readouterr().out
+    assert "081456789" in out
+    assert IP in out
+
+
+def test_whoami_works_without_account(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """共用机器上新来的人还没填学号，也得能看出占着的是谁的号。"""
+    bare = campus / "whobare.toml"
+    bare.write_text('adapter = "huuc"\n', encoding="utf-8")
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("081456789")))
+    assert run(["whoami", "--config", str(bare)]) == 0
+    assert "081456789" in capsys.readouterr().out
+
+
+def test_whoami_without_session(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, 'cb({"list":[]})'))
+    assert run(["whoami"]) == 1
+    assert "没有会话" in capsys.readouterr().out
+
+
+def test_whoami_flags_a_foreign_account(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("别人的号")))
+    assert run(["whoami"]) == 0
+    out = capsys.readouterr().out
+    assert "别人的号" in out
+    assert "不是配置里的 0814" in out
+
+
+def test_whoami_accepts_a_matching_account(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("081456789")))
+    assert run(["whoami"]) == 0
+    assert "和配置里的账号一致" in capsys.readouterr().out
+
+
+def test_whoami_ignores_the_same_ip_on_another_mac(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """DHCP 把 IP 转手后，别人的会话别被认成这台机器的。"""
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("081456789", mac="112233445566")))
+    assert run(["whoami", "--mac", "aabbccddeeff"]) == 1
+    assert "没有会话" in capsys.readouterr().out
+
+
+def test_whoami_survives_a_portal_that_hides_the_account(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """门户不回 user_account 时只能说「这个 IP 上有会话」，别硬说跟配置不一致。"""
+    patch_send(monkeypatch, lambda _url, _data: (200, f'cb({{"list":[{{"online_ip":"{IP}"}}]}})'))
+    assert run(["whoami", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["found"] is True
+    assert payload["account"] == ""
+    assert payload["matches_config"] is None
+
+
+def test_whoami_json(campus: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, _session("081456789")))
+    assert run(["whoami", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True and payload["found"] is True
+    assert payload["account"] == "081456789"
+    assert payload["matches_config"] is True
+
+
+def test_whoami_reports_missing_session_as_json(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    patch_send(monkeypatch, lambda _url, _data: (200, 'cb({"list":[]})'))
+    assert run(["whoami", "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["found"] is False and payload["account"] == ""
+
+
+def test_whoami_needs_the_campus_network(
+    campus: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setattr(net, "reachable", lambda *a, **k: False)
+    assert run(["whoami"]) == 3
+    assert "连不上门户" in capsys.readouterr().err
+
+
 # ---------- 错误分类与退出码 ----------
 
 

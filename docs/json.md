@@ -3,7 +3,7 @@
 给脚本和监控用。`--json` 时 **stdout 只有一个 JSON 对象**（`watch` 是每行一个事件对象），
 面向人的文案一律进 **stderr**。
 
-支持这件事的只有这七个命令：`probe`、`status`、`login`、`logout`、`unbind`、`check`、`watch`。
+支持这件事的只有这八个命令：`probe`、`status`、`whoami`、`login`、`logout`、`unbind`、`check`、`watch`。
 其余命令（`init`、`adapters`、`urls`、`password`、`install`、`uninstall`）**不接受** `--json`，
 argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默吐人话。
 
@@ -83,6 +83,35 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
 | `ip` | 字符串 | 本机出口 IP |
 | `account` | 字符串 | 配置里的账号；没填会先以退出码 2 结束，不输出 JSON |
 | `sessions[]` | 数组 | 门户返回的原始行 + `ours: bool`。原始字段由门户决定，不保证稳定 |
+
+## `whoami --json`
+
+这台机器现在挂的是哪个账号。只读会话列表，不需要密码，也不需要先填 `account`。
+
+```json
+{
+  "schema": 1,
+  "ok": true,
+  "found": true,
+  "ip": "10.138.14.27",
+  "mac": "AABBCCDDEEFF",
+  "account": "081456789",
+  "accounts": ["081456789"],
+  "matches_config": true
+}
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `ok` | 布尔 | 与 `found` 同值，方便统一用 `jq -e .ok` |
+| `found` | 布尔 | 本机 IP（且 MAC 对得上，门户两者都回时才比）上有没有会话 |
+| `ip` | 字符串 | 本机出口 IP |
+| `mac` | 字符串 | 本机 MAC（12 位十六进制，取不到为空串） |
+| `account` | 字符串 | 门户上这条会话的账号；没有会话或门户不回账号时为空串 |
+| `accounts` | 字符串数组 | 同一 IP 上的全部账号，通常只有一个 |
+| `matches_config` | 布尔 \| null | 与配置里的 `account` 是否一致；没配账号、或门户不回账号时为 `null` |
+
+`found` 为 `false` 时退出码 1，JSON 照常输出（不是错误形态）。
 
 ## `login --json`
 

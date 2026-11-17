@@ -31,6 +31,7 @@ from .commands import (
     cmd_uninstall,
     cmd_urls,
     cmd_watch,
+    cmd_whoami,
 )
 from .errors import (
     EXIT_OK,
@@ -169,6 +170,13 @@ def _parser() -> argparse.ArgumentParser:
         help="看会话，标出哪条是你的",
         description="列出本 IP 与门户里的会话。没填 account 会直接指出来。",
     ).set_defaults(func=cmd_status)
+
+    sub.add_parser(
+        "whoami",
+        parents=[accounting, identity, tuning],
+        help="看这台机器登录的是哪个账号",
+        description="按本机 IP（门户回得出 MAC 时也核对）找会话，不用先填 account。",
+    ).set_defaults(func=cmd_whoami)
 
     check = sub.add_parser(
         "check",

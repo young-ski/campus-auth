@@ -36,10 +36,76 @@ def _is_ours(session, ctx: Context) -> bool:
     return ctx.config.account in session.account
 
 
+def _on_this_machine(session, ctx: Context) -> bool:
+    """会话是不是挂在这台机器上：先比 IP；门户回得出 MAC 时再核一遍。
+
+    共用网段里 DHCP 会把 IP 转手，只比 IP 会把上一位用户的会话认成这台机器的。
+    """
+    if session.ip != ctx.ip:
+        return False
+    remote = session.mac.upper().replace(":", "").replace("-", "")
+    return not (ctx.mac and remote and remote != ctx.mac)
+
+
+def cmd_whoami(args: argparse.Namespace) -> int:
+    """这台机器现在登的是哪个账号：只读会话列表，不碰密码、也不用先填 account。"""
+    config = _config(args)
+    ctx = build(config, need_password=False, need_account=False)
+    require_campus(ctx)
+    sessions = ctx.portal.sessions()
+
+    hits = [session for session in sessions if _on_this_machine(session, ctx)]
+    accounts = [session.account for session in hits if session.account]
+    configured = config.account
+    # 门户没回账号（或本机压根没配）时说不清，别硬报「不一致」
+    matches = (
+        None
+        if not configured or not accounts
+        else all(configured in account for account in accounts)
+    )
+
+    if args.json:
+        _dump(
+            {
+                "ok": bool(hits),
+                "found": bool(hits),
+                "ip": ctx.ip,
+                "mac": ctx.mac,
+                "account": accounts[0] if accounts else "",
+                "accounts": accounts,
+                "matches_config": matches,
+            }
+        )
+        return EXIT_OK if hits else EXIT_REJECTED
+
+    if not hits:
+        _say(f"本机 {ctx.ip} 上没有会话（{ctx.zone}）")
+        if configured:
+            _say(f"配置里的账号 {configured} 现在不在线。")
+        _zone_line(ctx, args)
+        return EXIT_REJECTED
+
+    for session in hits:
+        elapsed = f"  时长 {session.time_long}s" if session.time_long else ""
+        _say(f"本机 {ctx.ip}  账号 {session.account or '(门户没回账号)'}{elapsed}")
+    if matches is False:
+        _say(
+            f"! 不是配置里的 {configured}：可能上一位用户还没掉线，或这台机器换了号 ——"
+            " 登录会顶掉它。"
+        )
+    elif matches:
+        _say("和配置里的账号一致。")
+    _say("账号来自门户的会话列表，不是本机记录。")
+    return EXIT_OK
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     config = _config(args)
     if not config.account:
-        message = "还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status"
+        message = (
+            "还没填 account：`campus-auth init` 生成模板，把学号填进去再跑 status"
+            "；只想看这台机器现在挂的是谁的号，用 `campus-auth whoami`"
+        )
         _note(args, f"! {message}")
         if args.json:
             _dump({"ok": False, "error": message})

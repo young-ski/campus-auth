@@ -111,6 +111,8 @@ campus-auth watch      # 断线自动重连，前台跑
 ```
 
 `status` 会把“门户里有会话”和“会话是你自己的”分开说 —— 前者可能只是上一位用户还没掉线。
+刚接手一台机器、又不知道该填哪个学号时先跑 `campus-auth whoami`：它按本机 IP（门户回得出 MAC 时也核对）
+说这台机器现在挂在谁的号上，不用先填 `account`。
 出问题先跑 `campus-auth doctor`：它把排障要的信息一次打全，密码不会出现，可以直接贴进 issue。
 
 ## 第一步的 probe
@@ -214,7 +216,7 @@ campus-auth uninstall           # 停掉并删干净
 ## JSON 输出
 
 `--json` 时 **stdout 只有 JSON 对象**，提示、进度、服务端原文这类人话一律进 stderr，
-所以 `| jq` 能直接用。支持这件事的只有 `probe`/`status`/`login`/`logout`/`unbind`/`check`/`watch`；
+所以 `| jq` 能直接用。支持这件事的只有 `probe`/`status`/`whoami`/`login`/`logout`/`unbind`/`check`/`watch`；
 其余命令不接受这个参数。
 
 每个对象都带 `"schema": 1`，同一版本内只增字段、不删不改。
@@ -231,6 +233,7 @@ campus-auth uninstall           # 停掉并删干净
 | `adapters` | 列出内置适配层与验证状态 |
 | `login` / `logout` / `unbind` | 登录 / 注销 / 解除 MAC 绑定 |
 | `status` | 列出门户会话，标出哪条是你自己的；`online` 指你自己、`any_online` 指门户里有任何会话 |
+| `whoami` | 这台机器现在登的是哪个账号（只读会话列表，不用先填学号） |
 | `check` | 只判定在线与否，结果走退出码 |
 | `doctor` | 体检：版本 / 配置路径 / 适配层 / 连通性 / 探测结论，密码只报来源 |
 | `watch` | 保活循环，启动打摘要、每轮带耗时；`--once` 跑一轮，`--log` 同时落盘（自动轮转） |

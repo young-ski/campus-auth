@@ -51,8 +51,8 @@ def _host_port(base_url: str) -> tuple[str, int]:
     return parts.hostname, port or (443 if parts.scheme == "https" else 80)
 
 
-def build(config: Config, *, need_password: bool = True) -> Context:
-    config.validate(need_password=need_password)
+def build(config: Config, *, need_password: bool = True, need_account: bool = True) -> Context:
+    config.validate(need_password=need_password, need_account=need_account)
     adapter = get_adapter(config.adapter)
 
     base_url = config.base_url or adapter.base_url

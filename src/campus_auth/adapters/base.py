@@ -99,6 +99,8 @@ class Adapter:
     verify_tls: bool = False
     status: str = "未验证"
     notes: str = ""
+    # `onlinelist` 默认扫的网段（CIDR / `a.b.c.*` / 起止都行）；空的就要求 --range
+    scan_ranges: tuple[str, ...] = ()
 
     # ---------- 编码 ----------
 

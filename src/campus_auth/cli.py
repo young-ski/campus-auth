@@ -23,6 +23,7 @@ from .commands import (
     cmd_login,
     cmd_logout,
     cmd_new_adapter,
+    cmd_onlinelist,
     cmd_password,
     cmd_probe,
     cmd_setup,
@@ -207,6 +208,30 @@ def _parser() -> argparse.ArgumentParser:
         help="不给 --url 时别从劫持页找地址，直接用适配层默认值",
     )
     probe_p.set_defaults(func=cmd_probe)
+
+    onlinelist_p = sub.add_parser(
+        "onlinelist",
+        aliases=["online-list"],
+        parents=[minimal, identity, tuning],
+        help="扫网段列出所有在线会话",
+        description=(
+            "门户一次只答一个 IP，这里按网段逐个查一遍：默认用适配层写好的网段，"
+            "`--range` 可改，`-e` 导出 CSV。慢，但不需要管理员账号；单个地址只问一次。"
+        ),
+    )
+    onlinelist_p.add_argument(
+        "-r",
+        "--range",
+        action="append",
+        metavar="网段",
+        help="CIDR / 10.1.2.* / 10.1.2.1-254，可重复；默认用适配层里的",
+    )
+    onlinelist_p.add_argument(
+        "-e", "--export", metavar="路径", help="导出 CSV；`-` 写到 stdout（不能与 --json 同用）"
+    )
+    onlinelist_p.add_argument("--workers", type=int, default=64, metavar="并发", help="默认 64")
+    onlinelist_p.add_argument("-q", "--quiet", action="store_true", help="不打印进度")
+    onlinelist_p.set_defaults(func=cmd_onlinelist)
 
     new_adapter = sub.add_parser(
         "new-adapter",

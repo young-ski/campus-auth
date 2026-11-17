@@ -12,6 +12,7 @@ from .account import cmd_password
 from .admin import cmd_adapters, cmd_doctor, cmd_init, cmd_install, cmd_uninstall, cmd_urls
 from .auth import cmd_check, cmd_login, cmd_logout, cmd_status, cmd_unbind, cmd_whoami
 from .new_adapter import cmd_new_adapter
+from .onlinelist import cmd_onlinelist
 from .scan import cmd_probe
 from .setup import cmd_setup
 from .watch import cmd_watch
@@ -25,6 +26,7 @@ __all__ = [
     "cmd_login",
     "cmd_logout",
     "cmd_new_adapter",
+    "cmd_onlinelist",
     "cmd_password",
     "cmd_probe",
     "cmd_setup",

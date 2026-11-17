@@ -120,6 +120,19 @@ class Session:
     raw: Mapping[str, object] = field(default_factory=dict)
 
 
+def session_from_row(row: Mapping[str, object]) -> Session:
+    """把门户的一行原始会话翻译成 `Session`；`online_list` 的字段名是 Dr.COM 定的。"""
+    return Session(
+        account=str(row.get("user_account") or row.get("user_name") or ""),
+        ip=str(row.get("online_ip") or ""),
+        mac=str(row.get("online_mac") or ""),
+        time_long=str(row.get("time_long") or row.get("add_time") or ""),
+        uplink=str(row.get("uplink_bytes") or ""),
+        downlink=str(row.get("downlink_bytes") or ""),
+        raw=row,
+    )
+
+
 class Portal:
     def __init__(
         self,
@@ -241,18 +254,7 @@ class Portal:
 
     def sessions(self) -> list[Session]:
         payload = self.request(self.adapter.sessions_request(self))
-        return [
-            Session(
-                account=str(row.get("user_account") or row.get("user_name") or ""),
-                ip=str(row.get("online_ip") or ""),
-                mac=str(row.get("online_mac") or ""),
-                time_long=str(row.get("time_long") or row.get("add_time") or ""),
-                uplink=str(row.get("uplink_bytes") or ""),
-                downlink=str(row.get("downlink_bytes") or ""),
-                raw=row,
-            )
-            for row in self.adapter.interpret_sessions(payload)
-        ]
+        return [session_from_row(row) for row in self.adapter.interpret_sessions(payload)]
 
     def mine(self) -> Session | None:
         flag = self.adapter.online_check(self)
@@ -287,4 +289,4 @@ def iter_retry_delays(attempts: int, base: float = 1.5, cap: float = 60.0) -> It
         yield min(cap, base * (2**i))
 
 
-__all__ = ["Portal", "Session", "extract_json"]
+__all__ = ["Portal", "Session", "extract_json", "session_from_row"]

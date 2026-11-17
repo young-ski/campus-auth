@@ -52,6 +52,7 @@ class HuucAdapter(Adapter):
             js_version="4.2.1",
             status="已验证",
             notes=f"门户 IP {PORTAL_IP}（只收 HTTPS）；netauth.huuc.edu.cn:802。",
+            scan_ranges=("10.152.0.0/16",),
         )
 
     def zone_of(self, ip: str, ssid: str | None) -> tuple[str, str | None, str | None, str]:

@@ -84,6 +84,33 @@
       },
       "additionalProperties": true
     },
+    "onlinelist_session": {
+      "type": "object",
+      "required": ["ip", "account", "mac", "online_since", "seconds", "ours"],
+      "properties": {
+        "ip": { "type": "string" },
+        "account": { "type": "string" },
+        "mac": { "type": "string" },
+        "online_since": { "type": "string" },
+        "seconds": { "type": "integer", "minimum": 0 },
+        "ours": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "onlinelist": {
+      "type": "object",
+      "required": ["schema", "ok", "scanned", "failed", "cancelled", "ranges", "sessions"],
+      "properties": {
+        "schema": { "$ref": "#/definitions/schema" },
+        "ok": { "type": "boolean" },
+        "scanned": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "cancelled": { "type": "boolean" },
+        "ranges": { "type": "array", "items": { "type": "string" } },
+        "sessions": { "type": "array", "items": { "$ref": "#/definitions/onlinelist_session" } }
+      },
+      "additionalProperties": true
+    },
     "login": {
       "type": "object",
       "required": ["schema", "ok", "result", "msg", "ret_code", "hint", "ip"],
@@ -160,6 +187,7 @@
     { "$ref": "#/definitions/probe" },
     { "$ref": "#/definitions/status" },
     { "$ref": "#/definitions/whoami" },
+    { "$ref": "#/definitions/onlinelist" },
     { "$ref": "#/definitions/login" },
     { "$ref": "#/definitions/action" },
     { "$ref": "#/definitions/check" },

@@ -106,6 +106,7 @@ class ScanOutcome:
     sessions: list[Session] = field(default_factory=list)
     scanned: int = 0
     failed: int = 0
+    failed_ips: list[str] = field(default_factory=list)
     cancelled: bool = False
 
 
@@ -153,11 +154,13 @@ def scan(
     futures = {pool.submit(one, ip): ip for ip in targets}
     try:
         for future in as_completed(futures):
+            ip = futures[future]
             try:
                 _, rows = future.result()
             except Exception:  # 超时、连接断、页面改版都只算这一个地址失败
                 with lock:
                     outcome.failed += 1
+                    outcome.failed_ips.append(ip)
             else:
                 with lock:
                     outcome.sessions.extend(session_from_row(row) for row in rows)
@@ -180,4 +183,5 @@ def scan(
             pool.shutdown(wait=True)
 
     outcome.sessions.sort(key=lambda session: ipaddress.IPv4Address(session.ip))
+    outcome.failed_ips.sort(key=ipaddress.IPv4Address)
     return outcome

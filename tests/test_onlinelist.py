@@ -111,6 +111,7 @@ def test_scan_counts_a_failed_address() -> None:
 
     assert outcome.scanned == 2
     assert outcome.failed == 1
+    assert outcome.failed_ips == ["10.1.2.2"]
     assert outcome.sessions == []
 
 
@@ -192,7 +193,56 @@ def test_onlinelist_reports_total_failure_as_transport(campus: Path, monkeypatch
 
     patch_send(monkeypatch, boom)
     assert run(["onlinelist", "-r", "10.1.2.1", "-q"]) == 4
-    assert "失败" in capsys.readouterr().err
+    assert "最终失败" in capsys.readouterr().err
+
+
+def test_onlinelist_retries_a_failed_address(campus: Path, monkeypatch, capsys) -> None:
+    calls = {"n": 0}
+
+    def handler(_url, _data):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TransportError("超时")
+        return (200, 'cb({"result":1,"list":[{"online_ip":"10.1.2.1","user_account":"x"}]})')
+
+    patch_send(monkeypatch, handler)
+    assert run(["onlinelist", "-r", "10.1.2.1", "-q"]) == 0
+    assert calls["n"] == 2
+    captured = capsys.readouterr()
+    assert "重试" in captured.err
+    assert captured.out.count("10.1.2.1") == 1  # 重试拿回来的行不重复
+
+
+def test_onlinelist_retry_zero_keeps_the_failure(campus: Path, monkeypatch, capsys) -> None:
+    calls = {"n": 0}
+
+    def handler(_url, _data):
+        calls["n"] += 1
+        raise TransportError("超时")
+
+    patch_send(monkeypatch, handler)
+    assert run(["onlinelist", "-r", "10.1.2.1", "--retry", "0", "-q", "--json"]) == 4
+    assert calls["n"] == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["failed_ips"] == ["10.1.2.1"]
+    assert payload["retried"] == 0
+    assert payload["ok"] is False
+
+
+def test_onlinelist_json_counts_retries(campus: Path, monkeypatch, capsys) -> None:
+    calls = {"n": 0}
+
+    def handler(_url, _data):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TransportError("超时")
+        return (200, 'cb({"list":[]})')
+
+    patch_send(monkeypatch, handler)
+    assert run(["onlinelist", "-r", "10.1.2.1", "-q", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["retried"] == 1
+    assert payload["failed"] == 0 and payload["failed_ips"] == []
 
 
 def test_onlinelist_help_has_export_and_no_password_flag(capsys) -> None:

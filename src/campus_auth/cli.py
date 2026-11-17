@@ -216,7 +216,7 @@ def _parser() -> argparse.ArgumentParser:
         help="扫网段列出所有在线会话",
         description=(
             "门户一次只答一个 IP，这里按网段逐个查一遍：默认用适配层写好的网段，"
-            "`--range` 可改，`-e` 导出 CSV。慢，但不需要管理员账号；单个地址只问一次。"
+            "`--range` 可改，`-e` 导出 CSV。慢，但不需要管理员账号；失败地址会降并发重试。"
         ),
     )
     onlinelist_p.add_argument(
@@ -230,6 +230,13 @@ def _parser() -> argparse.ArgumentParser:
         "-e", "--export", metavar="路径", help="导出 CSV；`-` 写到 stdout（不能与 --json 同用）"
     )
     onlinelist_p.add_argument("--workers", type=int, default=64, metavar="并发", help="默认 64")
+    onlinelist_p.add_argument(
+        "--retry",
+        type=int,
+        default=1,
+        metavar="轮数",
+        help="失败地址降并发重试几轮，默认 1；0 关闭",
+    )
     onlinelist_p.add_argument("-q", "--quiet", action="store_true", help="不打印进度")
     onlinelist_p.set_defaults(func=cmd_onlinelist)
 

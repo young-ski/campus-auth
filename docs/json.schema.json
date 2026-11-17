@@ -99,12 +99,16 @@
     },
     "onlinelist": {
       "type": "object",
-      "required": ["schema", "ok", "scanned", "failed", "cancelled", "ranges", "sessions"],
+      "required": [
+        "schema", "ok", "scanned", "failed", "failed_ips", "retried", "cancelled", "ranges", "sessions"
+      ],
       "properties": {
         "schema": { "$ref": "#/definitions/schema" },
         "ok": { "type": "boolean" },
         "scanned": { "type": "integer", "minimum": 0 },
         "failed": { "type": "integer", "minimum": 0 },
+        "failed_ips": { "type": "array", "items": { "type": "string" } },
+        "retried": { "type": "integer", "minimum": 0 },
         "cancelled": { "type": "boolean" },
         "ranges": { "type": "array", "items": { "type": "string" } },
         "sessions": { "type": "array", "items": { "$ref": "#/definitions/onlinelist_session" } }

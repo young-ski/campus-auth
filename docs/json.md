@@ -123,6 +123,8 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
   "ok": true,
   "scanned": 254,
   "failed": 1,
+  "failed_ips": ["10.152.59.2"],
+  "retried": 3,
   "cancelled": false,
   "ranges": ["10.152.59.1", "10.152.59.2"],
   "sessions": [
@@ -141,8 +143,10 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `ok` | 布尔 | 至少有一个地址问成功；全部失败为 `false`（退出码 4） |
-| `scanned` | 整数 | 实际问过的地址数；被 Ctrl-C 打断时小于总数 |
-| `failed` | 整数 | 超时 / 连接断 / 页面解析失败的地址数 |
+| `scanned` | 整数 | 覆盖到的地址数（首次问过的，重试不重复计）；被 Ctrl-C 打断时小于总数 |
+| `failed` | 整数 | 重试之后仍然失败的地址数 |
+| `failed_ips` | 字符串数组 | 最终失败的地址，方便原样再查一次 |
+| `retried` | 整数 | 因失败被重新问过的次数（一轮重试多个地址就计多个） |
 | `cancelled` | 布尔 | 是否被 Ctrl-C 打断（此时退出码 130） |
 | `ranges` | 字符串数组 | 展开后的地址清单，不是原始 `--range` 写法 |
 | `sessions[]` | 数组 | 找到的会话；字段见下 |
@@ -159,6 +163,9 @@ argparse 会直接报「unrecognized arguments」并以 2 退出，不会静默�
 | `ours` | 布尔 | 是不是本机 IP 上的会话 |
 
 `--json` 与 `-e -`（CSV 写 stdout）不能同用；写文件时 CSV 照常生成，JSON 仍在 stdout。
+
+失败地址默认会降并发重试一轮（`--retry 0` 关闭）；`retried` 记重试次数，`failed_ips`
+是重试后仍然失败的地址。名单类命令不把“没扫到人”当失败，退出码看 `ok`。
 
 ## `login --json`
 

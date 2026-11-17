@@ -123,6 +123,25 @@ def _progress(enabled: bool):
     return report
 
 
+def _dedupe(sessions: list[Session]) -> list[Session]:
+    """重试可能把同一行拿回来两次（上次超时但服务端其实答了），按内容去重。"""
+    seen: set[tuple[str, ...]] = set()
+    unique: list[Session] = []
+    for session in sessions:
+        key = (
+            session.ip,
+            session.account,
+            session.mac,
+            session.time_long,
+            str(session.raw.get("online_time") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(session)
+    return unique
+
+
 def cmd_onlinelist(args: argparse.Namespace) -> int:
     config = _config(args)
     ctx = build(config, need_password=False, need_account=False)
@@ -134,36 +153,62 @@ def cmd_onlinelist(args: argparse.Namespace) -> int:
     if not targets:
         raise ConfigError("网段展开后是空的")
     timeout = args.timeout or min(config.timeout, 8.0)
+    start_line = f"扫 {len(targets)} 个地址（{ctx.adapter.name}），并发 {args.workers}"
     if args.export == "-":
-        _err(f"扫 {len(targets)} 个地址（{ctx.adapter.name}），并发 {args.workers}")
+        _err(start_line)
     else:
-        _note(args, f"扫 {len(targets)} 个地址（{ctx.adapter.name}），并发 {args.workers}")
+        _note(args, start_line)
 
+    rounds = max(0, args.retry) + 1
+    retry_workers = min(args.workers, 12)
+    covered = 0
+    retried = 0
+    failed_ips: list[str] = []
+    collected: list[Session] = []
+    pending = targets
+    cancelled = False
     started = time.monotonic()
-    outcome = scan(
-        ctx.portal,
-        ctx.adapter,
-        targets,
-        workers=args.workers,
-        timeout=timeout,
-        progress=_progress(not args.quiet and not args.json),
-    )
+    for attempt in range(1, rounds + 1):
+        # 重试时把并发压下来：队列一散，刚才超时的地址往往几十毫秒就答了
+        workers = args.workers if attempt == 1 else retry_workers
+        outcome = scan(
+            ctx.portal,
+            ctx.adapter,
+            pending,
+            workers=workers,
+            timeout=timeout,
+            progress=_progress(attempt == 1 and not args.quiet and not args.json),
+        )
+        if attempt == 1:
+            covered = outcome.scanned
+        collected.extend(outcome.sessions)
+        failed_ips = outcome.failed_ips
+        cancelled = outcome.cancelled
+        if cancelled or not failed_ips:
+            break
+        if attempt < rounds:
+            retried += len(failed_ips)
+            _err(f"第 {attempt} 轮有 {len(failed_ips)} 个地址失败，降并发 {retry_workers} 重试…")
+            pending = failed_ips
     elapsed = time.monotonic() - started
-    if outcome.cancelled:
-        _err(f"已中断：扫了 {outcome.scanned}/{len(targets)}，结果照常输出")
+    sessions = _dedupe(collected)
+    if cancelled:
+        _err(f"已中断：扫了 {covered}/{len(targets)}，结果照常输出")
 
-    all_failed = bool(outcome.scanned) and outcome.failed >= outcome.scanned
+    all_failed = bool(covered) and len(failed_ips) >= covered
     ours = ctx.ip
     if args.export:
-        _write_csv(args.export, outcome.sessions, ours)
+        _write_csv(args.export, sessions, ours)
 
     if args.json:
         _dump(
             {
                 "ok": not all_failed,
-                "scanned": outcome.scanned,
-                "failed": outcome.failed,
-                "cancelled": outcome.cancelled,
+                "scanned": covered,
+                "failed": len(failed_ips),
+                "failed_ips": failed_ips,
+                "retried": retried,
+                "cancelled": cancelled,
                 "ranges": targets,
                 "sessions": [
                     {
@@ -174,20 +219,20 @@ def cmd_onlinelist(args: argparse.Namespace) -> int:
                         "seconds": _seconds(session.time_long),
                         "ours": session.ip == ours,
                     }
-                    for session in outcome.sessions
+                    for session in sessions
                 ],
             }
         )
     elif args.export != "-":
-        _say(_table(outcome.sessions, ours))
+        _say(_table(sessions, ours))
 
     _err(
-        f"扫完 {outcome.scanned} 个地址，用时 {elapsed:.1f}s，"
-        f"命中 {len(outcome.sessions)} 条，失败 {outcome.failed} 个"
+        f"扫完 {covered} 个地址，用时 {elapsed:.1f}s，"
+        f"命中 {len(sessions)} 条，重试 {retried} 次，最终失败 {len(failed_ips)} 个"
     )
     if all_failed:
         _err("所有地址都失败了：多半不在校园网，或门户地址不对")
         return EXIT_TRANSPORT
-    if outcome.cancelled:
+    if cancelled:
         return 130
     return EXIT_OK

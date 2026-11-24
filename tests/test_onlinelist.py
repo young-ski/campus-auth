@@ -130,7 +130,50 @@ def test_onlinelist_uses_the_adapter_range(campus: Path, monkeypatch, capsys) ->
 
     monkeypatch.setattr(onlinelist, "scan", fake_scan)
     assert run(["onlinelist", "-q"]) == 0
-    assert len(seen["targets"]) == 65534  # 10.152.0.0/16 去掉网络号与广播
+    assert len(seen["targets"]) == 3 * 65534  # 三个楼各一个 /16，去掉网络号与广播
+
+
+@pytest.mark.parametrize(
+    ("flag", "prefix"),
+    [("-jxl", "10.152."), ("-ssl", "10.138."), ("-sxl", "10.247.")],
+)
+def test_onlinelist_zone_flags_pick_one_building(
+    campus: Path, monkeypatch, flag: str, prefix: str
+) -> None:
+    from campus_auth.commands import onlinelist
+    from campus_auth.onlinelist import ScanOutcome
+
+    seen: dict[str, list[str]] = {}
+
+    def fake_scan(_portal, _adapter, targets, **_kw):
+        seen["targets"] = targets
+        return ScanOutcome()
+
+    monkeypatch.setattr(onlinelist, "scan", fake_scan)
+    assert run(["onlinelist", "-q", flag]) == 0
+    assert len(seen["targets"]) == 65534
+    assert all(ip.startswith(prefix) for ip in seen["targets"])
+
+
+def test_onlinelist_zone_flags_combine(campus: Path, monkeypatch) -> None:
+    from campus_auth.commands import onlinelist
+    from campus_auth.onlinelist import ScanOutcome
+
+    seen: dict[str, list[str]] = {}
+
+    def fake_scan(_portal, _adapter, targets, **_kw):
+        seen["targets"] = targets
+        return ScanOutcome()
+
+    monkeypatch.setattr(onlinelist, "scan", fake_scan)
+    assert run(["onlinelist", "-q", "-jxl", "-ssl"]) == 0
+    assert len(seen["targets"]) == 2 * 65534
+    assert len(set(seen["targets"])) == 2 * 65534
+
+
+def test_onlinelist_unknown_zone_for_generic(campus: Path, capsys) -> None:
+    assert run(["onlinelist", "--adapter", "generic", "-q", "-jxl"]) == 2
+    assert "不认识区域" in capsys.readouterr().err
 
 
 def test_onlinelist_needs_a_range_for_generic(campus: Path, capsys) -> None:
@@ -250,6 +293,7 @@ def test_onlinelist_help_has_export_and_no_password_flag(capsys) -> None:
         run(["onlinelist", "--help"])
     out = capsys.readouterr().out
     assert "--export" in out
+    assert "-jxl" in out and "-ssl" in out and "-sxl" in out
     assert "--password" not in out
 
 

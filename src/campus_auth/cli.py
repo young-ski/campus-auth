@@ -215,8 +215,9 @@ def _parser() -> argparse.ArgumentParser:
         parents=[minimal, identity, tuning],
         help="扫网段列出所有在线会话",
         description=(
-            "门户一次只答一个 IP，这里按网段逐个查一遍：默认用适配层写好的网段，"
-            "`--range` 可改，`-e` 导出 CSV。慢，但不需要管理员账号；失败地址会降并发重试。"
+            "门户一次只答一个 IP，这里按网段逐个查一遍：默认三个楼全扫，"
+            "也可用 -jxl / -ssl / -sxl 只查一个楼，或 --range 指定。"
+            "`-e` 导出 CSV；失败地址会降并发重试。"
         ),
     )
     onlinelist_p.add_argument(
@@ -225,6 +226,15 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         metavar="网段",
         help="CIDR / 10.1.2.* / 10.1.2.1-254，可重复；默认用适配层里的",
+    )
+    onlinelist_p.add_argument(
+        "-jxl", dest="zones", action="append_const", const="jxl", help="教学楼（10.152）"
+    )
+    onlinelist_p.add_argument(
+        "-ssl", dest="zones", action="append_const", const="ssl", help="宿舍楼（10.138）"
+    )
+    onlinelist_p.add_argument(
+        "-sxl", dest="zones", action="append_const", const="sxl", help="实训楼（10.247）"
     )
     onlinelist_p.add_argument(
         "-e", "--export", metavar="路径", help="导出 CSV；`-` 写到 stdout（不能与 --json 同用）"

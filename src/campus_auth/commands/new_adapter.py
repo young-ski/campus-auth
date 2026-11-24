@@ -52,6 +52,7 @@ class {klass}(Adapter):
             status="未验证",
             notes="脚手架生成，尚未真机验证。",
             scan_ranges=(),  # 例如 ("10.152.0.0/16",)，onlinelist 的默认网段
+            scan_zones={{}},  # 例如 {{"jxl": ("10.152.0.0/16",)}}，onlinelist -jxl
         )
 
 

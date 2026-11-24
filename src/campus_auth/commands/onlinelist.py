@@ -102,10 +102,22 @@ def _write_csv(path: str, sessions: list[Session], ours: str) -> None:
 
 
 def _targets(args: argparse.Namespace, adapter) -> list[str]:
-    specs = list(args.range or []) or list(adapter.scan_ranges)
+    specs = list(args.range or [])
+    zones = list(getattr(args, "zones", None) or [])
+    if zones:
+        unknown = [zone for zone in zones if zone not in adapter.scan_zones]
+        if unknown:
+            known = "、".join(f"-{zone}" for zone in adapter.scan_zones) or "（适配层没有区域参数）"
+            raise ConfigError(
+                f"适配层 {adapter.name} 不认识区域 {'、'.join(unknown)}；可用: {known}"
+            )
+        for zone in zones:
+            specs.extend(adapter.scan_zones[zone])
+    if not specs:
+        specs = list(adapter.scan_ranges)
     if not specs:
         raise ConfigError(
-            f"适配层 {adapter.name} 没写默认网段：用 --range 指定，"
+            f"适配层 {adapter.name} 没写默认网段：用 -jxl 这类区域参数或 --range 指定，"
             "比如 --range 10.152.0.0/16 或 --range 10.152.59.*"
         )
     return parse_targets(specs)
@@ -153,11 +165,13 @@ def cmd_onlinelist(args: argparse.Namespace) -> int:
     if not targets:
         raise ConfigError("网段展开后是空的")
     timeout = args.timeout or min(config.timeout, 8.0)
-    start_line = f"扫 {len(targets)} 个地址（{ctx.adapter.name}），并发 {args.workers}"
+    spec = f"扫 {len(targets)} 个地址（{ctx.adapter.name}），并发 {args.workers}"
+    if args.zones:
+        spec += f"，区域 {'、'.join(args.zones)}"
     if args.export == "-":
-        _err(start_line)
+        _err(spec)
     else:
-        _note(args, start_line)
+        _note(args, spec)
 
     rounds = max(0, args.retry) + 1
     retry_workers = min(args.workers, 12)

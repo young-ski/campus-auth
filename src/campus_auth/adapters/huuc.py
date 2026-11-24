@@ -28,6 +28,14 @@ SSID_ZONES = {
 SUBNET_ZONES = {
     "10.152.": ("教学楼/图书馆", "UCLINK", "none"),
     "10.138.": ("宿舍", "UCSIG", "cmcc"),
+    "10.247.": ("实训楼", None, "none"),
+}
+
+# onlinelist 的区域快捷参数：教学楼 / 宿舍楼 / 实训楼
+SCAN_ZONES = {
+    "jxl": ("10.152.0.0/16",),
+    "ssl": ("10.138.0.0/16",),
+    "sxl": ("10.247.0.0/16",),
 }
 
 HINTS = {
@@ -52,7 +60,8 @@ class HuucAdapter(Adapter):
             js_version="4.2.1",
             status="已验证",
             notes=f"门户 IP {PORTAL_IP}（只收 HTTPS）；netauth.huuc.edu.cn:802。",
-            scan_ranges=("10.152.0.0/16",),
+            scan_ranges=("10.152.0.0/16", "10.138.0.0/16", "10.247.0.0/16"),
+            scan_zones=SCAN_ZONES,
         )
 
     def zone_of(self, ip: str, ssid: str | None) -> tuple[str, str | None, str | None, str]:

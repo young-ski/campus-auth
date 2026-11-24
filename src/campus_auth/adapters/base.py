@@ -101,6 +101,8 @@ class Adapter:
     notes: str = ""
     # `onlinelist` 默认扫的网段（CIDR / `a.b.c.*` / 起止都行）；空的就要求 --range
     scan_ranges: tuple[str, ...] = ()
+    # 区域简称 -> 网段，给 `onlinelist -jxl` 这类快捷参数用
+    scan_zones: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     # ---------- 编码 ----------
 

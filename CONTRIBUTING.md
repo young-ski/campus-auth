@@ -17,7 +17,7 @@
    - 返回的不是 JSON → 覆盖 `interpret_login()` 和 `hint_for()`
 3. 在 `adapters/__init__.py` 的 `BUILTIN` 里登记，把 `status` 改成 `已验证`，并在
    [`docs/schools.md`](docs/schools.md) 记一行。知道本校终端网段的话顺手补 `scan_ranges`
-   （`onlinelist` 的默认值；不写就必须 `--range`）。
+   和 `scan_zones`（`onlinelist` 的默认值和 `-jxl` 这类区域参数；不写就必须 `--range`）。
 4. 跑 `pytest`，再跑一遍 `campus-auth status --adapter 你的代号` 做真机确认。
 5. 提 PR，标题写 `adapter: <学校>`，正文附一段打码后的请求/响应样本。
 

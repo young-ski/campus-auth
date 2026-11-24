@@ -231,13 +231,18 @@ campus-auth uninstall           # 停掉并删干净
 所以慢（一个 /16 约两三分钟）、但不需要管理员账号。
 
 ```bash
-campus-auth onlinelist                 # 默认网段来自适配层（huuc 是 10.152.0.0/16）
-campus-auth onlinelist -r 10.152.59.*  # 只扫一层
+campus-auth onlinelist                 # 三个楼全扫
+campus-auth onlinelist -jxl            # 只扫教学楼（10.152）
+campus-auth onlinelist -ssl            # 只扫宿舍楼（10.138）
+campus-auth onlinelist -sxl            # 只扫实训楼（10.247）
+campus-auth onlinelist -jxl -ssl       # 可以叠加
 campus-auth onlinelist -e 在线.csv     # 导出 CSV（带 BOM，Excel 直接打开）
 campus-auth onlinelist --json | jq -r '.sessions[].account'
 ```
 
-`--range` 支持 CIDR、`10.1.2.*`、`10.1.2.1-254`，可重复；`--workers` 调并发（默认 64），
+`-jxl` / `-ssl` / `-sxl` 是适配层声明的区域（`scan_zones`），和 `--range` 混用时取并集；
+只想扫一层就单给 `--range`。`--range` 支持 CIDR、`10.1.2.*`、`10.1.2.1-254`，可重复。
+`--workers` 调并发（默认 64），
 `--timeout` 是单个地址的超时。失败地址会自动降并发重试一轮（`--retry` 改轮数、`0` 关闭），
 重试后仍失败的列在 `--json` 的 `failed_ips` 里，可以原样再跑。全都失败才退 4。
 本机那条在表里标 `*`、CSV 里 `本机=1`。
